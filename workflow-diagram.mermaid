@@ -1,0 +1,40 @@
+flowchart TD
+    subgraph IN["1 - INBOUND (the pipes)"]
+        A1[Supplier emails invoice<br/>to unique address]
+        A2[User forwards email<br/>via mail rule]
+        A3[User uploads photo/PDF<br/>manual backup]
+    end
+
+    A1 --> WH[Postmark/Mailgun webhook]
+    A2 --> WH
+    A3 --> UP["/api/upload endpoint"]
+
+    WH --> STORE[(Supabase Storage<br/>raw file saved)]
+    UP --> STORE
+
+    STORE --> PARSE{{"parseInvoice()<br/>AI extracts JSON:<br/>vendor, total, due date,<br/>line items, doc_type"}}
+
+    PARSE -->|success| SAVE[(Save to DB<br/>status = review)]
+    PARSE -->|fail 429/529| RETRY[withRetry backoff]
+    RETRY -->|still fails| DEAD[(failed_ingests<br/>dead-letter table)]
+    RETRY -->|recovers| SAVE
+    DEAD -.->|/api/ingest/retry| PARSE
+
+    SAVE --> TYPE{doc_type?}
+    TYPE -->|invoice| POS[Positive total]
+    TYPE -->|credit_note| NEG[Negative total<br/>subtracts from spend]
+
+    POS --> AUDIT{{"Price audit:<br/>match item to last<br/>order, same supplier"}}
+    NEG --> REVIEW
+    AUDIT -->|matched and over 5 pct| SPIKE[Flag price_spike = true]
+    AUDIT -->|no confident match| QUIET[No flag - stay silent]
+    SPIKE --> REVIEW[Review queue on dashboard]
+    QUIET --> REVIEW
+
+    REVIEW -->|user taps Confirm| CONF[(status = confirmed)]
+    REVIEW -->|user edits| OVERRIDE["/api/invoices/override<br/>edited_by_user = true"]
+    OVERRIDE --> CONF
+
+    CONF --> DASH[["DASHBOARD VIEWS:<br/>- Due this week<br/>- Running spend (bars)<br/>- Per-supplier ticker<br/>- Confident price spikes"]]
+
+    DASH -.note.-> XERO[/"Official totals paid in XERO<br/>Watchdog is indicative only"/]
