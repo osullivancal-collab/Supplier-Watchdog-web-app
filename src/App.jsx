@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Icon from './components/Icon.jsx';
-import { ToastProvider, useToast } from './components/UI.jsx';
+import { Sheet, ToastProvider, useToast } from './components/UI.jsx';
 import { money } from './lib/format.js';
 import { useInsights } from './lib/insights.js';
 import { backendEnabled, signOut, useAccess, useSession } from './lib/backend.js';
@@ -9,7 +9,7 @@ import { deletePhoto, newId, savePhoto, useStore, vendorName } from './lib/store
 import Bills from './screens/Bills.jsx';
 import Counter from './screens/Counter.jsx';
 import Deals, { TenderSheet } from './screens/Deals.jsx';
-import Home from './screens/Home.jsx';
+import Home, { CaughtList } from './screens/Home.jsx';
 import SignIn from './screens/SignIn.jsx';
 import { AccountSheet, AddMenu, BillForm, BillSheet, DisputeSheet, ItemSheet, SupplierForm, TryBuy } from './screens/Sheets.jsx';
 import Supplier from './screens/Supplier.jsx';
@@ -130,6 +130,7 @@ function Shell({ data, dispatch, account = null, onSignIn = null }) {
     counter: (supplierId) => fromMenu({ type: 'counter', supplierId }),
     tender: () => open({ type: 'tender' }),
     dispute: (c) => open({ type: 'dispute', c }),
+    caught: () => open({ type: 'caught' }),
     account: () => open({ type: 'account' }),
     addBill: (supplierId, extra = {}) => fromMenu({ type: 'billForm', preset: { supplierId, ...extra } }),
     editBill: (id) => replace({ type: 'billForm', id }),
@@ -166,6 +167,12 @@ function Shell({ data, dispatch, account = null, onSignIn = null }) {
     const key = `${o.type}-${i}`;
     switch (o.type) {
       case 'menu': return <AddMenu key={key} onClose={close} go={go} />;
+      case 'caught': return (
+        <Sheet key={key} title="Watchdog caught" onClose={close}>
+          <p className="muted" style={{ marginTop: -6 }}>Places you've been charged more than you need to be. Dispute one and Watchdog writes the message.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}><CaughtList data={data} onDispute={go.dispute} /></div>
+        </Sheet>
+      );
       case 'supplier': return <Supplier key={key} data={data} ins={ins} supplierId={o.id} go={go} onClose={close} />;
       case 'item': return <ItemSheet key={key} data={data} itemId={o.id} onClose={close}
         onAlert={async (it, at, on) => { if (!(await dispatch({ type: 'alert', itemId: it.id, at, on }))) return; toast(on ? `Alert set at ${money(at)}` : 'Alert off'); close(); }} />;

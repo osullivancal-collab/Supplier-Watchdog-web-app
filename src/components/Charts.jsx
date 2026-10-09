@@ -164,7 +164,7 @@ export function MonthBars({ rows, selected, onSelect, ghost }) {
 }
 
 // One hue, darker for smaller slices: the mix is about proportion.
-const SHADES = ['var(--chart)', '#8FB8D8', '#5E7E98', '#3E5568', '#2C3B48', '#222C35', '#1B232B'];
+const SHADES = ['var(--chart)', '#8FB8D8', '#5E8FB5', '#9AA7B3', '#6B7A88', '#4F5D6B', '#3A4652'];
 
 export function Donut({ rows }) {
   let acc = 0;

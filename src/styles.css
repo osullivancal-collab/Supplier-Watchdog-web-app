@@ -301,3 +301,48 @@ input[type='date'] { color-scheme: dark; }
 .holding .pill { min-width: 64px; }
 .avatar-tile { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-family: var(--display); font-weight: 800; font-size: 16px; flex: none; }
 .btn:disabled { opacity: .55; cursor: default; }
+
+/* ---------- Home: the market card (steel). The view switches the chart and the number together.
+   Charts inside read the same tokens as everywhere else, re-pointed for a dark surface. ---------- */
+.market {
+  --card: var(--hero); --bg: var(--hero); --card-2: rgba(255, 255, 255, .09);
+  --text: #FFFFFF; --text-2: #D3DAE0; --muted: var(--hero-muted);
+  --line: rgba(255, 255, 255, .07); --line-2: rgba(255, 255, 255, .22);
+  --chart: #EEF2F5; --link: var(--accent); --ring: rgba(242, 206, 27, .55);
+  --up: #FF8A7C; --up-soft: rgba(255, 138, 124, .16);
+  --down: #4FD39A; --down-soft: rgba(79, 211, 154, .16);
+  --due: #F4BC5A; --due-soft: rgba(244, 188, 90, .14);
+  background: var(--hero); color: var(--text); border-radius: 26px; padding: 14px 14px 16px;
+  box-shadow: var(--hero-shadow); display: flex; flex-direction: column; gap: 4px;
+}
+.market .seg { background: rgba(255, 255, 255, .07); }
+.market .seg button[aria-selected='true'] { background: rgba(255, 255, 255, .16); color: #FFFFFF; box-shadow: none; }
+.market-readout { padding: 14px 4px 0; min-height: 112px; }
+.market-label { font-size: 15px; font-weight: 600; color: var(--hero-muted); }
+.market-value { font-family: var(--display); font-size: 46px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.08; }
+.market-of { font-size: 22px; color: var(--hero-muted); }
+.market-change { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 15px; font-weight: 600; color: var(--text-2); min-height: 30px; }
+.market-change span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.market-help { font-size: 14px; color: var(--hero-muted); padding: 4px 4px 0; line-height: 1.45; }
+.market .periods { padding: 10px 0 0; }
+.market .period[aria-pressed='true'] { background: rgba(242, 206, 27, .16); color: var(--accent); }
+.market .chart { margin-top: 6px; }
+.market .dot-value { font-size: 40px; }
+.market .dots-avg-label { background: var(--hero); }
+.market .link { align-self: flex-start; padding: 0 4px; }
+.market .mix, .market .bars { padding-left: 4px; padding-right: 4px; }
+
+/* ---------- Home: "Needs you" — one list of everything that wants a tap ---------- */
+.count { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; height: 24px; padding: 0 7px; margin-left: 8px; border-radius: 12px; background: var(--hero); color: #FFFFFF; font-size: 13px; vertical-align: 3px; }
+.todo { display: flex; align-items: center; gap: 8px; padding: 0 12px 0 0; }
+.todo + .todo { border-top: 1px solid var(--line); }
+.todo-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 12px 4px 12px 14px; text-align: left; color: inherit; min-height: 64px; }
+.todo-icon { width: 40px; height: 40px; border-radius: 12px; flex: none; display: flex; align-items: center; justify-content: center; background: var(--card-2); color: var(--text-2); }
+.todo-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.todo-title { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.todo-sub { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.todo-amt { font-weight: 800; font-size: 15px; white-space: nowrap; }
+.todo-btn { height: 38px; font-size: 14px; padding: 0 12px; border-radius: 10px; flex: none; }
+/* Equal-width segments and ranges, labels centred (was sizing to the text). */
+.seg button, .period { flex: 1 1 0; min-width: 0; text-align: center; justify-content: center; }
+.todo-amt.up { color: var(--up); }

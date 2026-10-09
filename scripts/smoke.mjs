@@ -27,7 +27,7 @@ let step = 0;
 const check = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); console.log(`  ✓ ${msg}`); };
 const settle = (ms = 700) => page.waitForTimeout(ms); // let count-up animations finish
 const shot = async (name) => { await settle(500); return page.screenshot({ path: `${SHOTS}/${String(++step).padStart(2, '0')}-${name}.png` }); };
-const heroNum = async () => Number((await page.locator('.hero-card .v').first().textContent()).replace(/[^0-9.]/g, ''));
+const heroNum = async () => Number((await page.locator('.market-value').first().textContent()).replace(/[^0-9.]/g, ''));
 const tab = (name) => page.locator('nav .tab', { hasText: name }).click();
 const plus = () => page.getByRole('button', { name: 'Add something' }).click();
 const noOverflow = () => page.evaluate(() => [...document.querySelectorAll('.scroll')].every((el) => el.scrollWidth <= el.clientWidth + 1));
@@ -36,10 +36,10 @@ try {
   await page.goto(`http://localhost:${PORT}/`);
   await page.evaluate(() => localStorage.clear());
   await page.reload();
-  await page.waitForSelector('.hero-card');
+  await page.waitForSelector('.market');
   await shot('home');
 
-  check((await page.locator('.hero-card .k').textContent()) === 'You owe suppliers', 'home leads with what you owe');
+  check((await page.locator('.market-label').textContent()) === 'You owe suppliers', 'home leads with what you owe');
   check(await page.evaluate(() => document.documentElement.dataset.theme) === 'light', 'light look by default');
   const start = await heroNum();
   check(start > 0, `owed is a real number (${start})`);
@@ -55,6 +55,25 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await tab('Home');
 
+  // Four chart views, and the number follows the view and your finger.
+  const label = () => page.locator('.market-label').textContent();
+  const ch = await page.locator('.market .chart').boundingBox();
+  await page.mouse.move(ch.x + ch.width * 0.3, ch.y + ch.height / 2);
+  check(/^Owed /.test(await label()), `dragging over the owed chart shows that day (${await label()})`);
+  await page.mouse.move(ch.x + ch.width * 0.9, ch.y + ch.height / 2);
+  check(/^Left after /.test(await label()), 'past today it shows what is left after bills are paid');
+  await page.mouse.move(ch.x + ch.width / 2, ch.y - 120);
+  await settle(200);
+  await page.locator('.period', { hasText: '1Y' }).click();
+  check((await page.locator('.market-change').textContent()).includes('in a year'), 'owed range changes the comparison');
+  await page.locator('.period', { hasText: '3M' }).click();
+  await page.getByRole('tab', { name: 'Mix' }).click();
+  check(await page.locator('.market .donut').count() === 1 && (await label()).startsWith('Spent'), 'Mix shows who takes your money');
+  await page.getByRole('tab', { name: 'Shock' }).click();
+  check(await page.locator('.market .gauge').count() === 1 && (await label()).startsWith('Bill shock'), 'Shock shows the gauge');
+  await shot('shock');
+  await page.getByRole('tab', { name: 'Spend' }).click();
+
   // Dots: each one is a period total; tapping one says what it is.
   check(await page.locator('.dots-legend').getByText('Each dot is a week').count() === 1, '3M shows one dot per week');
   const tapDot = async (sel, n) => { const b = await page.locator(sel).nth(n).boundingBox(); await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2); };
@@ -63,27 +82,33 @@ try {
   await tapDot('.dot-due', 2);
   check((await page.locator('.dot-due').nth(2).getAttribute('aria-pressed')) === 'true', 'close-together due dots can each be picked');
   check((await page.locator('.dot-title').textContent()).startsWith('Due week of'), 'tapping a hollow dot shows what is due that week');
-  await page.getByRole('tab', { name: '1M' }).click();
+  await page.locator('.period', { hasText: '1M' }).click();
   check(await page.locator('.dots-legend').getByText('Each dot is a day').count() === 1, '1M shows one dot per day');
-  await page.getByRole('tab', { name: '1Y' }).click();
+  await page.locator('.period', { hasText: '1Y' }).click();
   check(await page.locator('.dot:not(.dot-due)').count() === 12, '1Y shows twelve month dots');
   await shot('dots-year');
-  await page.getByRole('tab', { name: '3M' }).click();
+  await page.locator('.period', { hasText: '3M' }).click();
+  await page.getByRole('tab', { name: 'Owed' }).click();
 
-  // Confirm the incoming bill.
-  await page.locator('.incoming').getByRole('button', { name: 'Confirm' }).click();
+  // "Needs you" groups three new bills into one row that leads to them.
+  await page.locator('.todo', { hasText: '3 new bills to check' }).getByRole('button', { name: 'Check', exact: true }).click();
+  check(await page.getByRole('tab', { name: /To check · 3/ }).getAttribute('aria-selected') === 'true', 'the new-bills row opens the bills to check');
+  await page.getByRole('button', { name: "It's right — add it" }).first().click();
+  await tab('Home');
   await settle();
   const afterConfirm = await heroNum();
   check(Math.abs(afterConfirm - start - 1284.5) < 0.01, `confirming adds the bill (${start} → ${afterConfirm})`);
 
   // Dispute something Watchdog caught.
-  const caughtTotal = async () => Number((await page.locator('section[aria-label="Watchdog caught"] .num.down').textContent()).replace(/[^0-9.]/g, ''));
+  await page.locator('.todo', { hasText: 'Watchdog caught' }).getByRole('button', { name: 'See them', exact: true }).click();
+  const caughtTotal = () => page.locator('.sheet .catch').count();
   const caughtBefore = await caughtTotal();
-  await page.locator('.catch').first().getByRole('button', { name: 'Dispute' }).click();
+  await page.locator('.sheet .catch').first().getByRole('button', { name: 'Dispute' }).click();
   await shot('dispute');
   await page.getByRole('button', { name: "I've sent it" }).click();
   await settle(300);
-  check((await caughtTotal()) < caughtBefore, `a disputed catch moves off the list ($${caughtBefore} → $${await caughtTotal()})`);
+  check((await caughtTotal()) < caughtBefore, `a disputed catch moves off the list (${caughtBefore} → ${await caughtTotal()})`);
+  await page.goBack(); await settle(300);
 
   // Supplier page from a holding row; back gesture closes it.
   await page.locator('.holding').first().click();
@@ -97,7 +122,7 @@ try {
 
   // Add a bill through the + button.
   await plus();
-  await page.locator('.action', { hasText: 'Add a bill' }).click();
+  await page.locator('.action', { hasText: 'Type in a bill' }).click();
   await page.getByLabel('Amount').fill('432.10');
   await page.getByRole('group', { name: 'Supplier' }).getByRole('button', { name: 'Middys' }).click();
   await page.getByPlaceholder('e.g. Smith reno').fill('Test job');
@@ -202,7 +227,7 @@ try {
   check(await page.getByText('Treat your suppliers like a portfolio.').count() === 1, 'starting fresh shows the welcome screen');
   await shot('fresh-home');
   await plus();
-  await page.locator('.action', { hasText: 'Add a bill' }).click();
+  await page.locator('.action', { hasText: 'Type in a bill' }).click();
   await page.getByLabel('Amount').fill('250');
   await page.getByRole('button', { name: '+ New' }).click();
   await page.getByLabel('New supplier name').fill('Local Electrical');

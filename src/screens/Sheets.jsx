@@ -23,24 +23,31 @@ function usePhoto(bill) {
 // The + menu
 // ---------------------------------------------------------------------------
 export function AddMenu({ onClose, go }) {
-  const items = [
-    ['camera', 'Snap a docket', 'Photo + amount, done', () => go.addBill(null, { photo: true })],
-    ['bill', 'Add a bill', 'Type it in', () => go.addBill()],
-    ['bill', 'Add a credit', 'A return or refund', () => go.addBill(null, { credit: true })],
-    ['store', 'Add a supplier', 'Anyone who bills you', () => go.addSupplier()],
-    ['calc', 'Try a buy', 'What it does before you buy it', () => go.tryPurchase()],
+  const groups = [
+    ['Add', [
+      ['camera', 'Snap a docket', 'Take a photo — Watchdog fills it in', () => go.addBill(null, { photo: true })],
+      ['bill', 'Type in a bill', 'Or a credit for a return', () => go.addBill()],
+      ['store', 'Add a supplier', 'Anyone who bills you', () => go.addSupplier()],
+    ]],
+    ['At the counter', [
+      ['handshake', 'Counter mode', 'Show the rep your numbers and do a deal', () => go.counter()],
+      ['calc', 'Try a buy', 'See what a purchase does before you sign', () => go.tryPurchase()],
+    ]],
   ];
   return (
-    <Sheet title="Add" onClose={onClose}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {items.map(([icon, title, sub, fn]) => (
-          <button key={title} className="action" onClick={fn}>
-            <span className="action-icon"><Icon name={icon} size={22} /></span>
-            <span style={{ flex: 1 }}><span className="action-title" style={{ display: 'block' }}>{title}</span><span className="action-sub">{sub}</span></span>
-            <Icon name="chevron" size={20} style={{ color: 'var(--muted)' }} />
-          </button>
-        ))}
-      </div>
+    <Sheet title="What do you want to do?" onClose={onClose}>
+      {groups.map(([label, items]) => (
+        <div key={label} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="label">{label}</div>
+          {items.map(([icon, title, sub, fn]) => (
+            <button key={title} className="action" onClick={fn}>
+              <span className="action-icon"><Icon name={icon} size={22} /></span>
+              <span style={{ flex: 1 }}><span className="action-title" style={{ display: 'block' }}>{title}</span><span className="action-sub">{sub}</span></span>
+              <Icon name="chevron" size={20} style={{ color: 'var(--muted)' }} />
+            </button>
+          ))}
+        </div>
+      ))}
     </Sheet>
   );
 }

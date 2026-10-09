@@ -33,7 +33,7 @@ export default function Bills({ data, ins, go }) {
 
       <div className="seg" role="tablist">
         <button role="tab" aria-selected={tab === 'pay'} onClick={() => setTab('pay')}>To pay</button>
-        <button role="tab" aria-selected={tab === 'confirm'} onClick={() => setTab('confirm')}>New{data.queue.length ? ` · ${data.queue.length}` : ''}</button>
+        <button role="tab" aria-selected={tab === 'confirm'} onClick={() => setTab('confirm')}>To check{data.queue.length ? ` · ${data.queue.length}` : ''}</button>
         <button role="tab" aria-selected={tab === 'paid'} onClick={() => setTab('paid')}>Paid</button>
       </div>
 
@@ -46,7 +46,7 @@ export default function Bills({ data, ins, go }) {
 
       {tab === 'confirm' && (
         data.queue.length === 0
-          ? <div className="card empty"><Icon name="check" size={32} style={{ color: 'var(--down)' }} /><div className="h2">All caught up</div><p className="muted">Bills emailed to you land here to check.</p></div>
+          ? <div className="card empty"><Icon name="check" size={32} style={{ color: 'var(--down)' }} /><div className="h2">All caught up</div><p className="muted">Snapped and emailed bills wait here until you say they're right.</p></div>
           : data.queue.map((q) => (
             <div key={q.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: -12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
@@ -58,8 +58,8 @@ export default function Bills({ data, ins, go }) {
               </div>
               {q.flag && <span className={`tag ${q.flag.kind === 'duplicate' ? 'warn' : 'up'}`} style={{ height: 'auto', padding: '8px 10px', lineHeight: 1.35, fontSize: 14 }}>{q.flag.text}</span>}
               <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => go.bill(q.id, q)}>Check</button>
-                <button className="btn btn-primary" style={{ flex: 1.5 }} onClick={() => go.confirm(q)}>Confirm</button>
+                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => go.bill(q.id, q)}>See the bill</button>
+                <button className="btn btn-primary" style={{ flex: 1.5 }} onClick={() => go.confirm(q)}>It's right — add it</button>
               </div>
             </div>
           ))

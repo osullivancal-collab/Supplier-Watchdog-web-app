@@ -1,29 +1,59 @@
 import { useMemo, useState } from 'react';
-import { DotChart } from '../components/Charts.jsx';
+import { DotChart, Donut, Gauge, StepChart } from '../components/Charts.jsx';
 import Icon from '../components/Icon.jsx';
 import { HoldingRow } from '../components/Rows.jsx';
 import { useCountUp } from '../components/UI.jsx';
 import { bucketDescriber, greeting } from '../lib/buckets.js';
-import { dateParts, kfmt, money, money0, todayLabel, whenDue } from '../lib/format.js';
+import { dayLabel, dirClass, kfmt, money, money0, todayLabel, whenDue } from '../lib/format.js';
+import { shockTone } from '../lib/insights.js';
 import { catches as findCatches, spendBuckets } from '../lib/model.js';
 import { daysLeft } from '../lib/backend.js';
 import { vendorName } from '../lib/store.js';
 
 const RANGES = ['1M', '3M', '6M', '1Y'];
 
+const VIEWS = [['owed', 'Owed'], ['spend', 'Spend'], ['mix', 'Mix'], ['shock', 'Shock']];
+const OWED_DAYS = { '1M': 31, '3M': 92, '6M': 183, '1Y': 365 };
+const PERIOD_NAME = { '1M': 'in a month', '3M': 'in 3 months', '6M': 'in 6 months', '1Y': 'in a year' };
+const sum = (bs) => bs.reduce((t, b) => t + b.total, 0);
+const unique = (xs) => [...new Set(xs)];
+
 export default function Home({ data, ins, go, account = null }) {
+  const [view, setView] = useState('owed');
   const [range, setRange] = useState('3M');
+  const [scrub, setScrub] = useState(null);
   const nameOf = (id) => data.suppliers.find((s) => s.id === id)?.name || id || 'Other';
   const name = (b) => vendorName(b, data.suppliers);
   const buckets = useMemo(() => spendBuckets(data.bills, range), [data.bills, range]);
   const caught = useMemo(() => findCatches(data).filter((c) => !data.disputes[c.id]), [data]);
-  const owed = useCountUp(ins.owed);
   const sh = ins.shock;
-  const incoming = data.queue[0];
-  const coming = ins.open.filter((b) => b.due >= 0).slice(0, 6);
   const top = ins.ranked.filter((s) => s.spend > 0).slice(0, 4);
-  const overdueCount = ins.open.filter((b) => b.due < 0).length;
   const now = new Date();
+
+  // ----- the number at the top follows the view, and your finger on the chart -----
+  const past = ins.history.slice(-(OWED_DAYS[range] + 1)).map((d) => d.owed);
+  let hero = null;
+  if (view === 'owed') {
+    if (!scrub) {
+      const diff = ins.owed - past[0];
+      hero = { label: 'You owe suppliers', value: ins.owed, pill: { tone: dirClass(diff), text: `${diff >= 0 ? '+' : '−'}${money0(Math.abs(diff))}` }, note: PERIOD_NAME[range] };
+    } else if (scrub.kind === 'past') {
+      const d = ins.history.slice(-(OWED_DAYS[range] + 1))[scrub.index];
+      const what = [d.ins.length && `+${money0(sum(d.ins))} ${unique(d.ins.map(name)).join(', ')}`, d.outs.length && `−${money0(sum(d.outs))} paid`].filter(Boolean).join(' · ');
+      hero = { label: `Owed ${dayLabel(d.day)}`, value: d.owed, note: what || 'No bills that day' };
+    } else {
+      const d = ins.ahead[scrub.index];
+      hero = { label: `Left after ${dayLabel(d.day)}`, value: d.owed, pill: d.due.length ? { tone: 'up', text: `−${money0(sum(d.due))}` } : null, note: d.due.length ? unique(d.due.map(name)).join(', ') : 'Nothing due' };
+    }
+  } else if (view === 'mix') {
+    const lead = ins.ranked[0];
+    hero = { label: 'Spent · last 90 days', value: ins.total90, note: lead && lead.spend > 0 ? `${lead.name} takes ${lead.share.toFixed(0)}%` : '' };
+  } else if (view === 'shock') {
+    const p = Math.round((sh.ratio - 1) * 100);
+    hero = { label: 'Bill shock · next 30 days', value: sh.score, score: true, pill: { tone: p > 0 ? 'up' : 'down', text: `${p > 0 ? '+' : ''}${p}%` }, note: 'vs a normal month' };
+  }
+  const shown = useCountUp(hero?.value ?? 0);
+  const pick = (v) => { setView(v); setScrub(null); };
 
   return (
     <div>
@@ -40,87 +70,40 @@ export default function Home({ data, ins, go, account = null }) {
 
       <TrialBanner access={account?.access} go={go} />
       {ins.empty ? <Welcome go={go} /> : (
-        <div className="page" style={{ paddingTop: 10, gap: 16 }}>
-          {incoming && (
-            <div className="incoming" style={{ margin: 0 }}>
-              <span className="ping" />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="muted" style={{ fontSize: 13, fontWeight: 600 }}>New bill landed</div>
-                <div style={{ fontSize: 16, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name(incoming)} <span className="num">{money(incoming.total)}</span></div>
-              </div>
-              <button className="btn btn-primary" style={{ height: 42, fontSize: 15, borderRadius: 12 }} onClick={() => go.confirm(incoming)}>Confirm</button>
+        <div className="page" style={{ paddingTop: 10, gap: 18 }}>
+          <section className="market" aria-label="Your supplier spend">
+            <div className="seg" role="tablist" aria-label="Chart view">
+              {VIEWS.map(([k, l]) => <button key={k} role="tab" aria-selected={view === k} onClick={() => pick(k)}>{l}</button>)}
             </div>
-          )}
 
-          <section className="hero-card" aria-label="What you owe">
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-              <div style={{ minWidth: 0 }}>
-                <div className="k">You owe suppliers</div>
-                <div className="v num">{money(owed)}</div>
+            {hero && (
+              <div className="market-readout" aria-live="polite">
+                <div className="market-label">{hero.label}</div>
+                <div className="market-value num" style={hero.score && sh.score >= 60 ? { color: 'var(--up)' } : null}>
+                  {hero.score ? Math.round(shown) : money(shown)}{hero.score && <span className="market-of"> /100</span>}
+                </div>
+                <div className="market-change">
+                  {hero.pill && <span className={`pill num ${hero.pill.tone}`}>{hero.pill.text}</span>}
+                  <span>{hero.note}</span>
+                </div>
               </div>
-              <button onClick={() => go.tab('bills')} style={{ textAlign: 'right', color: 'inherit', paddingTop: 4 }} aria-label={`Bill shock ${sh.score}, ${sh.label}`}>
-                <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.06em', color: 'var(--hero-muted)' }}>BILL SHOCK</div>
-                <div className="num" style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.1, color: sh.score >= 60 ? 'var(--hero-warn)' : 'var(--hero-text)' }}>{sh.score}</div>
-                <div className={`shock-segs ${sh.score >= 60 ? 'hot' : ''}`}>{[0, 1, 2, 3, 4].map((i) => <i key={i} className={i < Math.ceil(sh.score / 20) ? 'on' : ''} />)}</div>
-              </button>
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <span className="hero-chip num">{kfmt(ins.next7)} due this week</span>
-              {ins.overdue > 0 && <span className="hero-chip warn num">{kfmt(ins.overdue)} overdue</span>}
-              <span className="hero-chip">{sh.label} month ahead</span>
-            </div>
+            )}
+
+            {view === 'owed' && <StepChart key={range} past={past} ahead={ins.ahead.map((d) => d.owed)} scrub={scrub} onScrub={setScrub} />}
+            {view === 'spend' && <div style={{ marginTop: 14 }}><DotChart key={range} data={buckets} describe={bucketDescriber(buckets.unit, nameOf)} /></div>}
+            {view === 'mix' && <Donut rows={ins.ranked.filter((s) => s.spend > 0).map((s) => ({ name: s.name, share: s.share }))} />}
+            {view === 'shock' && <Gauge score={sh.score} label={sh.label} tone={shockTone(sh.score)} caption={`Normal month ${kfmt(sh.normal)} · next 30 days ${kfmt(sh.next30)}`} />}
+
+            {(view === 'owed' || view === 'spend') && (
+              <div className="periods" role="group" aria-label="Range">
+                {RANGES.map((r) => <button key={r} className="period" aria-pressed={range === r} onClick={() => { setRange(r); setScrub(null); }}>{r}</button>)}
+              </div>
+            )}
+            {view === 'mix' && <button className="link" onClick={() => go.tab('suppliers')}>See every supplier</button>}
+            {view === 'shock' && <p className="market-help">How much is falling due in the next 30 days compared with a normal month. Over 60 means a heavy month is coming.</p>}
           </section>
 
-          <section className="card" aria-label="Spending">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-              <h2 className="h2">Spending</h2>
-              {buckets.streak >= 2
-                ? <span className="tag down"><Icon name="flame" size={14} stroke={2.4} style={{ marginRight: 5 }} />{buckets.streak} {buckets.unit}s under avg</span>
-                : <span className="tag up"><Icon name="flame" size={14} stroke={2.4} style={{ marginRight: 5 }} />Last {buckets.unit} over avg</span>}
-            </div>
-            <div className="seg" role="tablist" aria-label="Range" style={{ marginTop: 14 }}>
-              {RANGES.map((r) => <button key={r} role="tab" aria-selected={range === r} onClick={() => setRange(r)}>{r}</button>)}
-            </div>
-            <div style={{ marginTop: 12 }}>
-              <DotChart key={range} data={buckets} describe={bucketDescriber(buckets.unit, nameOf)} />
-            </div>
-          </section>
-
-          {caught.length > 0 && (
-            <section className="card" aria-label="Watchdog caught">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
-                <h2 className="h2">Watchdog caught</h2>
-                <span className="num down" style={{ fontSize: 24, fontWeight: 800 }}>{money0(caught.reduce((t, c) => t + c.amount, 0))}</span>
-              </div>
-              <p className="muted" style={{ fontSize: 13 }}>on your own bills, this quarter</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
-                {caught.slice(0, 3).map((c) => <CatchRow key={c.id} c={c} nameOf={nameOf} onDispute={() => go.dispute(c)} />)}
-              </div>
-            </section>
-          )}
-
-          {coming.length > 0 && (
-            <section>
-              <div className="section-head"><h2 className="h2">Coming up</h2><button className="link" onClick={() => go.tab('bills')}>All bills</button></div>
-              <div className="coming">
-                {coming.map((b) => {
-                  const d = dateParts(b.due);
-                  return (
-                    <button key={b.id} className="coming-card" onClick={() => go.bill(b.id)}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div className="date-tile" style={{ width: 42, height: 46 }}><b className="num" style={{ fontSize: 17 }}>{d.day}</b><span>{d.mon}</span></div>
-                        <div style={{ fontWeight: 700, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name(b)}</div>
-                      </div>
-                      <div>
-                        <div className="coming-amt num">{money0(b.total)}</div>
-                        <div className="muted" style={{ fontSize: 13, fontWeight: 600 }}>{whenDue(b.due)}</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          )}
+          <NeedsYou data={data} ins={ins} go={go} caught={caught} name={name} />
 
           <section>
             <div className="section-head"><h2 className="h2">Your suppliers</h2><button className="link" onClick={() => go.tab('suppliers')}>See all</button></div>
@@ -129,43 +112,87 @@ export default function Home({ data, ins, go, account = null }) {
               {top.length === 0 && <p className="muted" style={{ padding: '18px 0' }}>No supplier bills in the last 90 days.</p>}
             </div>
           </section>
-
-          <div className="tiles">
-            <button className="tile card-tap" onClick={() => go.tryPurchase()}>
-              <span className="action-icon" style={{ width: 42, height: 42, background: 'var(--card-2)' }}><Icon name="calc" size={20} /></span>
-              <span><span style={{ display: 'block', fontWeight: 800, fontSize: 17 }}>Try a buy</span><span className="muted" style={{ fontSize: 13 }}>See it before you sign</span></span>
-            </button>
-            <button className="tile card-tap" onClick={() => go.counter()}>
-              <span className="action-icon" style={{ width: 42, height: 42, background: 'var(--card-2)' }}><Icon name="handshake" size={20} /></span>
-              <span><span style={{ display: 'block', fontWeight: 800, fontSize: 17 }}>Counter mode</span><span className="muted" style={{ fontSize: 13 }}>Bargain on the spot</span></span>
-            </button>
-          </div>
         </div>
       )}
     </div>
   );
 }
 
-export function CatchRow({ c, nameOf, onDispute }) {
-  const price = c.kind === 'price';
+/**
+ * Everything that wants a tap from you, in one short list, most urgent first:
+ * new bills to confirm, overdue bills, what Watchdog caught, what's due this week.
+ * Several of a kind collapse into one row so the list stays short.
+ */
+function NeedsYou({ data, ins, go, caught, name }) {
+  const rows = [];
+  if (data.queue.length > 2) {
+    rows.push({ key: 'new', icon: 'bill', tone: 'due', title: `${data.queue.length} new bills to check`, sub: `${money0(sum(data.queue))} · ${unique(data.queue.map(name)).join(', ')}`, action: ['Check', () => go.tab('bills')] });
+  } else {
+    for (const q of data.queue) {
+      rows.push({ key: `q${q.id}`, icon: 'bill', tone: 'due', title: `New bill · ${name(q)} ${money(q.total)}`, sub: q.flag ? q.flag.text : `Due ${dayLabel(q.due)} — is it right?`,
+        action: ['Confirm', () => go.confirm(q)], open: () => go.bill(q.id, q) });
+    }
+  }
+  for (const b of ins.open.filter((x) => x.due < 0)) {
+    rows.push({ key: `o${b.id}`, icon: 'bell', tone: 'up', title: `Overdue · ${name(b)}`, sub: `${whenDue(b.due)}${b.ref ? ` · ${b.ref}` : ''}`, amount: money(b.total), amountTone: 'up', open: () => go.bill(b.id) });
+  }
+  if (caught.length) {
+    const total = caught.reduce((t, c) => t + c.amount, 0);
+    rows.push({ key: 'caught', icon: 'eye', tone: 'down', title: `Watchdog caught ${money0(total)}`, sub: `${caught.length} overcharge${caught.length === 1 ? '' : 's'} you can push back on`, action: ['See them', () => go.caught()] });
+  }
+  const soon = ins.open.filter((b) => b.due >= 0 && b.due <= 6);
+  if (soon.length) {
+    rows.push({ key: 'soon', icon: 'bills', tone: null, title: `${soon.length} bill${soon.length === 1 ? '' : 's'} due this week`, sub: `Next: ${name(soon[0])} ${whenDue(soon[0].due).toLowerCase()}`, amount: money0(sum(soon)), open: () => go.tab('bills') });
+  }
   return (
-    <div className="catch">
-      <span className="catch-icon" style={{ background: price ? 'var(--up-soft)' : 'var(--due-soft)', color: price ? 'var(--up)' : 'var(--due)' }}>
-        <Icon name={price ? 'tag' : 'copy'} size={20} stroke={2.2} />
-      </span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 700, fontSize: 15 }}>
-          {price ? `${nameOf(c.supplierId)}: ${c.item.name.split(' · ')[0]}` : `${nameOf(c.supplierId)} billed twice?`}
-        </div>
-        <div className="muted num" style={{ fontSize: 13 }}>
-          {price
-            ? `${money(c.mine)} vs ${money(c.best)} at ${nameOf(c.bestId)} · ${money0(c.amount)}/qtr`
-            : `${c.b.ref || 'Bill'} matches ${c.a.ref || 'an earlier bill'} · ${money0(c.amount)}`}
-        </div>
+    <section aria-label="Needs you">
+      <div className="section-head">
+        <h2 className="h2">Needs you</h2>
+        <button className="link" onClick={() => go.tab('bills')}>All bills</button>
       </div>
-      <button className="btn btn-primary" style={{ height: 40, fontSize: 14, padding: '0 12px', borderRadius: 10 }} onClick={onDispute}>Dispute</button>
-    </div>
+      <div className="card" style={{ padding: '4px 0' }}>
+        {rows.length === 0 && <p className="muted" style={{ padding: '18px 16px' }}>All clear. Nothing new, nothing overdue, nothing due this week.</p>}
+        {rows.map((r) => (
+          <div key={r.key} className="todo">
+            <button className="todo-main" onClick={r.open || r.action?.[1]}>
+              <span className="todo-icon" style={r.tone ? { background: `var(--${r.tone}-soft)`, color: `var(--${r.tone})` } : null}><Icon name={r.icon} size={19} stroke={2.2} /></span>
+              <span className="todo-text">
+                <span className="todo-title">{r.title}</span>
+                <span className="todo-sub">{r.sub}</span>
+              </span>
+              {r.amount && !r.action && <span className={`todo-amt num ${r.amountTone || ''}`}>{r.amount}</span>}
+              {!r.action && <Icon name="chevron" size={18} style={{ color: 'var(--muted)', flex: 'none' }} />}
+            </button>
+            {r.action && <button className="btn btn-primary todo-btn" onClick={r.action[1]}>{r.action[0]}</button>}
+          </div>
+        ))}
+      </div>
+    </section>
   );
+}
+
+/** The list behind "Watchdog caught": each overcharge, with a ready-made dispute. */
+export function CaughtList({ data, onDispute }) {
+  const nameOf = (id) => data.suppliers.find((s) => s.id === id)?.name || id || 'Other';
+  const caught = findCatches(data).filter((c) => !data.disputes[c.id]);
+  if (!caught.length) return <p className="muted">Nothing left to dispute. Watchdog keeps checking every new bill.</p>;
+  return caught.map((c) => {
+    const price = c.kind === 'price';
+    return (
+      <div key={c.id} className="catch">
+        <span className="catch-icon" style={{ background: price ? 'var(--up-soft)' : 'var(--due-soft)', color: price ? 'var(--up)' : 'var(--due)' }}>
+          <Icon name={price ? 'tag' : 'copy'} size={20} stroke={2.2} />
+        </span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>{price ? `${nameOf(c.supplierId)}: ${c.item.name.split(' · ')[0]}` : `${nameOf(c.supplierId)} billed twice?`}</div>
+          <div className="muted num" style={{ fontSize: 13 }}>
+            {price ? `${money(c.mine)} vs ${money(c.best)} at ${nameOf(c.bestId)} · ${money0(c.amount)}/qtr` : `${c.b.ref || 'Bill'} matches ${c.a.ref || 'an earlier bill'} · ${money0(c.amount)}`}
+          </div>
+        </div>
+        <button className="btn btn-primary" style={{ height: 40, fontSize: 14, padding: '0 12px', borderRadius: 10 }} onClick={() => onDispute(c)}>Dispute</button>
+      </div>
+    );
+  });
 }
 
 function Welcome({ go }) {
