@@ -6,11 +6,12 @@ import { useCountUp } from '../components/UI.jsx';
 import { bucketDescriber, greeting } from '../lib/buckets.js';
 import { dateParts, kfmt, money, money0, todayLabel, whenDue } from '../lib/format.js';
 import { catches as findCatches, spendBuckets } from '../lib/model.js';
+import { daysLeft } from '../lib/backend.js';
 import { vendorName } from '../lib/store.js';
 
 const RANGES = ['1M', '3M', '6M', '1Y'];
 
-export default function Home({ data, ins, go }) {
+export default function Home({ data, ins, go, account = null }) {
   const [range, setRange] = useState('3M');
   const nameOf = (id) => data.suppliers.find((s) => s.id === id)?.name || id || 'Other';
   const name = (b) => vendorName(b, data.suppliers);
@@ -31,12 +32,13 @@ export default function Home({ data, ins, go }) {
           <span className="brand-mark"><Icon name="eye" size={20} stroke={2.2} /></span>
           <span>
             <span style={{ display: 'block', fontFamily: 'var(--display)', fontSize: 22, fontWeight: 800, lineHeight: 1 }}>Watchdog</span>
-            <span className="muted" style={{ display: 'block', fontSize: 13, fontWeight: 500, marginTop: 3 }}>{greeting(now)}, {data.business.owner.split(' ')[0]} · {todayLabel(now)}</span>
+            <span className="muted" style={{ display: 'block', fontSize: 13, fontWeight: 500, marginTop: 3 }}>{greeting(now)}{data.business.owner ? `, ${data.business.owner.split(' ')[0]}` : ''} · {todayLabel(now)}</span>
           </span>
         </div>
         <button className="icon-btn" aria-label="Account" onClick={() => go.account()} style={{ fontSize: 14, fontWeight: 700, background: 'var(--card)', border: '1px solid var(--line)' }}>{data.business.initials}</button>
       </div>
 
+      <TrialBanner access={account?.access} go={go} />
       {ins.empty ? <Welcome go={go} /> : (
         <div className="page" style={{ paddingTop: 10, gap: 16 }}>
           {incoming && (
@@ -188,6 +190,25 @@ function Welcome({ go }) {
         ))}
       </div>
       <p className="muted" style={{ fontSize: 15 }}>Coming soon: forward supplier emails and bills add themselves.</p>
+    </div>
+  );
+}
+
+function TrialBanner({ access, go }) {
+  if (!access || access.subscription_status === 'grandfathered') return null;
+  const left = daysLeft(access.trial_ends_at);
+  const late = access.subscription_status === 'past_due' || access.subscription_status === 'unpaid';
+  let text = null;
+  if (late) text = 'Your last payment didn’t go through. Fix it to keep adding bills.';
+  else if (!access.has_access) text = 'Your free trial has ended. Your bills are safe; subscribe to keep adding.';
+  else if (access.trial_active && left <= 3) text = `${left} day${left === 1 ? '' : 's'} left on your free trial.`;
+  if (!text) return null;
+  return (
+    <div className="page" style={{ paddingTop: 10, paddingBottom: 0 }}>
+      <button className="incoming" style={{ margin: 0, textAlign: 'left', width: '100%' }} onClick={() => go.account()}>
+        <span style={{ flex: 1, fontWeight: 700, fontSize: 15 }}>{text}</span>
+        <span className="btn btn-primary" style={{ height: 40, fontSize: 14, borderRadius: 10 }}>{late ? 'Fix' : 'Subscribe'}</span>
+      </button>
     </div>
   );
 }

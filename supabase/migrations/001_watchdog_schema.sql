@@ -256,10 +256,10 @@ create table public.deals (
   reward text not null check (char_length(reward) between 1 and 200),
   rep text check (char_length(rep) <= 120),
   starts_on date not null,
-  ends_on date not null check (ends_on > starts_on),
+  ends_on date not null check (ends_on >= starts_on),   -- "end of month" on the last day ends today
   -- Signatures as small SVG path strings, as drawn on the phone.
-  signature_you text check (char_length(signature_you) <= 20000),
-  signature_rep text check (char_length(signature_rep) <= 20000),
+  signature_you text check (char_length(signature_you) <= 100000),
+  signature_rep text check (char_length(signature_rep) <= 100000),
   signed_at timestamptz,
   result text check (result in ('won', 'lost')),   -- set by the user, never guessed
   final_value numeric(12, 2),                      -- snapshot when the deal ends

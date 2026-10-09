@@ -40,5 +40,8 @@
     "api/invoice-read.js": {
       "maxDuration": 60
     }
-  }
+  },
+  "regions": [
+    "syd1"
+  ]
 }

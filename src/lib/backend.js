@@ -1,3 +1,5 @@
+import { useCallback, useEffect, useState } from 'react';
+
 // The app's link to the backend (Supabase login + database, and our /api routes).
 //
 // Off until VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set at build time.
@@ -70,3 +72,38 @@ export async function openBillingPortal() {
   const { url } = await call('/api/stripe/portal');
   window.location.assign(url);
 }
+
+/** A short-lived link to a docket photo in private storage. */
+export async function photoUrl(path) {
+  const sb = await getClient();
+  if (!sb || !path) return null;
+  const { data, error } = await sb.storage.from('dockets').createSignedUrl(path, 300);
+  if (error) { console.error('[backend] photo link failed', error.message); return null; }
+  return data.signedUrl;
+}
+
+/** undefined while checking, null when signed out, else the Supabase session. */
+export function useSession() {
+  const [session, setSession] = useState(backendEnabled ? undefined : null);
+  useEffect(() => {
+    if (!backendEnabled) return undefined;
+    let sub;
+    let alive = true;
+    getClient().then((sb) => {
+      sb.auth.getSession().then(({ data }) => { if (alive) setSession(data.session || null); });
+      sub = sb.auth.onAuthStateChange((_event, s) => { if (alive) setSession(s || null); }).data.subscription;
+    });
+    return () => { alive = false; sub?.unsubscribe(); };
+  }, []);
+  return session;
+}
+
+/** Trial / plan state for the signed-in account, with a way to re-check it. */
+export function useAccess(session) {
+  const [access, setAccess] = useState(null);
+  const refresh = useCallback(async () => { if (session) setAccess(await myAccess()); }, [session]);
+  useEffect(() => { refresh(); }, [refresh]);
+  return [access, refresh];
+}
+
+export const daysLeft = (iso) => (iso ? Math.max(0, Math.ceil((Date.parse(iso) - Date.now()) / 86400000)) : 0);

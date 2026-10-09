@@ -6,12 +6,13 @@
 // Dates the user enters are stored as real dates (YYYY-MM-DD), never as
 // "days from today", so a bill added on Monday is still dated Monday next week.
 
-import { useEffect, useMemo, useReducer } from 'react';
+import { useCallback, useEffect, useMemo, useReducer } from 'react';
 import * as sample from '../data/sample.js';
 import { dateFromOffset } from './format.js';
 import { dayOffset } from './model.js';
 
 const KEY = 'watchdog.v2';
+export const newId = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `id${Date.now()}${Math.random().toString(16).slice(2)}`);
 const PHOTO = 'watchdog.photo.';
 
 export const emptyState = {
@@ -27,6 +28,9 @@ export const emptyState = {
   deals: [],
   hidden: [],
   disputes: {},             // catch id → 'YYYY-MM-DD' the dispute was sent (or dismissed)
+  // Signed-in accounts only (filled from the database by remote.js):
+  pending: [],              // bills that arrived by photo/email and wait for "Confirm"
+  business: null,           // { name, owner, initials, forwardAddress } from the profile
 };
 
 export const toIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -47,7 +51,13 @@ function load() {
 
 export function reducer(state, a) {
   switch (a.type) {
-    case 'confirm': return state.confirmed.includes(a.id) ? state : { ...state, confirmed: [...state.confirmed, a.id] };
+    case 'confirm': {
+      const p = (state.pending || []).find((b) => b.id === a.id);
+      if (p) return { ...state, pending: state.pending.filter((b) => b.id !== a.id), bills: [{ ...p, status: 'confirmed' }, ...state.bills] };
+      return state.confirmed.includes(a.id) ? state : { ...state, confirmed: [...state.confirmed, a.id] };
+    }
+    case 'load': return { ...state, ...a.state };
+    case 'profile': return { ...state, business: { ...state.business, ...a.business } };
     case 'pay': return { ...state, paid: { ...state.paid, [a.id]: a.on ? toIso(new Date()) : null } };
     case 'saveBill': {
       const { bill } = a;
@@ -100,10 +110,11 @@ export function derive(state) {
 
   return {
     useSample: state.useSample,
-    business: sample.business,
+    business: state.business || sample.business,
+    remote: Boolean(state.business),
     suppliers,
     bills,
-    queue: base.reviewQueue.filter((q) => !state.confirmed.includes(q.id)),
+    queue: [...(state.pending || []).map(fromStored), ...base.reviewQueue.filter((q) => !state.confirmed.includes(q.id))],
     items: base.items,
     // Deals signed in the app carry real dates; turn them into day offsets.
     deals: [...state.deals.map((d) => (d.startIso ? { ...d, start: offsetFromIso(d.startIso), end: offsetFromIso(d.endIso) } : d)), ...base.deals],
@@ -122,7 +133,9 @@ export function useStore() {
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { console.error('[watchdog] could not save', e); }
   }, [state]);
   const data = useMemo(() => derive(state), [state]);
-  return [data, dispatch];
+  // Same contract as the signed-in store: dispatch resolves true once saved.
+  const save = useCallback((a) => { dispatch(a); return Promise.resolve(true); }, []);
+  return [data, save];
 }
 
 export const vendorName = (bill, suppliers) =>

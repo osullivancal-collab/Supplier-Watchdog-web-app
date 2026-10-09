@@ -3,11 +3,14 @@ import Icon from './components/Icon.jsx';
 import { ToastProvider, useToast } from './components/UI.jsx';
 import { money } from './lib/format.js';
 import { useInsights } from './lib/insights.js';
-import { deletePhoto, savePhoto, useStore, vendorName } from './lib/store.js';
+import { backendEnabled, signOut, useAccess, useSession } from './lib/backend.js';
+import { useRemoteStore } from './lib/remote.js';
+import { deletePhoto, newId, savePhoto, useStore, vendorName } from './lib/store.js';
 import Bills from './screens/Bills.jsx';
 import Counter from './screens/Counter.jsx';
 import Deals, { TenderSheet } from './screens/Deals.jsx';
 import Home from './screens/Home.jsx';
+import SignIn from './screens/SignIn.jsx';
 import { AccountSheet, AddMenu, BillForm, BillSheet, DisputeSheet, ItemSheet, SupplierForm, TryBuy } from './screens/Sheets.jsx';
 import Supplier from './screens/Supplier.jsx';
 import Suppliers from './screens/Suppliers.jsx';
@@ -15,7 +18,62 @@ import Suppliers from './screens/Suppliers.jsx';
 const TABS = [['home', 'Home'], ['bills', 'Bills'], ['add', ''], ['suppliers', 'Suppliers'], ['deals', 'Deals']];
 
 export default function App() {
-  return <ToastProvider><Shell /></ToastProvider>;
+  return <ToastProvider><Root /></ToastProvider>;
+}
+
+const LOCAL = 'watchdog.mode';
+const readMode = () => { try { return localStorage.getItem(LOCAL); } catch { return null; } };
+
+/**
+ * Without backend keys the app is on-phone only, as before. With them, people
+ * sign in (or choose to just look around with sample data on this phone).
+ */
+function Root() {
+  const session = useSession();
+  const [mode, setMode] = useState(readMode);
+  const setLocal = (on) => { try { on ? localStorage.setItem(LOCAL, 'local') : localStorage.removeItem(LOCAL); } catch { /* fine */ } setMode(on ? 'local' : null); };
+
+  if (!backendEnabled) return <LocalShell />;
+  if (session === undefined) return <Splash />;
+  if (session) return <RemoteShell key={session.user.id} session={session} />;
+  if (mode === 'local') return <LocalShell onSignIn={() => setLocal(false)} />;
+  return <SignIn onLookAround={() => setLocal(true)} />;
+}
+
+function Splash({ children }) {
+  return (
+    <div className="app"><main className="scroll"><div className="page" style={{ paddingTop: 120, alignItems: 'center', textAlign: 'center', gap: 16 }}>
+      <span className="brand-mark" style={{ width: 52, height: 52 }}><Icon name="eye" size={26} stroke={2.2} /></span>
+      {children || <p className="muted" role="status">Loading…</p>}
+    </div></main></div>
+  );
+}
+
+function LocalShell({ onSignIn }) {
+  const [data, dispatch] = useStore();
+  return <Shell data={data} dispatch={dispatch} onSignIn={onSignIn} />;
+}
+
+function RemoteShell({ session }) {
+  const toast = useToast();
+  const [data, dispatch, status, refresh] = useRemoteStore(session, toast);
+  const [access, refreshAccess] = useAccess(session);
+
+  // Coming back from Stripe Checkout.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get('checkout');
+    if (!q) return;
+    history.replaceState(history.state, '', window.location.pathname);
+    if (q === 'success') { toast('You’re subscribed — thanks!'); refreshAccess(); }
+  }, [toast, refreshAccess]);
+
+  if (status === 'loading') return <Splash />;
+  if (status === 'error') {
+    return <Splash><p className="muted">Couldn’t load your bills. Check your connection.</p>
+      <button className="btn btn-primary" onClick={() => refresh(false)}>Try again</button></Splash>;
+  }
+  const account = { email: session.user.email, access, refreshAccess, signOut: async () => { await signOut(); } };
+  return <Shell data={data} dispatch={dispatch} account={account} />;
 }
 
 /**
@@ -52,8 +110,7 @@ function useTheme() {
   return [theme, setTheme];
 }
 
-function Shell() {
-  const [data, dispatch] = useStore();
+function Shell({ data, dispatch, account = null, onSignIn = null }) {
   const [theme, setTheme] = useTheme();
   const ins = useInsights(data);
   const toast = useToast();
@@ -79,26 +136,30 @@ function Shell() {
     addSupplier: () => fromMenu({ type: 'supplierForm' }),
     editSupplier: (id) => open({ type: 'supplierForm', id }),
     tryPurchase: () => fromMenu({ type: 'tryBuy' }),
-    confirm: (q) => {
-      dispatch({ type: 'confirm', id: q.id });
+    confirm: async (q) => {
+      if (!(await dispatch({ type: 'confirm', id: q.id }))) return false;
       try { navigator.vibrate?.(10); } catch { /* not supported */ }
       toast(`${name(q)} ${money(q.total)} added`);
+      return true;
     },
   };
 
-  const newSupplier = (supplierName) => {
-    const id = `s${Date.now()}`;
-    dispatch({ type: 'saveSupplier', supplier: { id, name: supplierName, terms: '30 days EOM' }, isNew: true });
-    return id;
+  const newSupplier = async (supplierName) => {
+    const id = newId();
+    const ok = await dispatch({ type: 'saveSupplier', supplier: { id, name: supplierName, terms: '30 days EOM' }, isNew: true });
+    return ok ? id : null;
   };
 
-  const saveBill = (stored, isNew, photo) => {
-    if (photo) {
-      if (!savePhoto(stored.id, photo)) { stored = { ...stored, photo: false }; toast('Bill saved — photo too big to keep on this phone'); }
-    } else deletePhoto(stored.id);
-    dispatch({ type: 'saveBill', bill: stored, isNew });
+  // photo: a new photo (data URL), null = removed, undefined = unchanged.
+  const saveBill = async (stored, isNew, photo) => {
+    let note = null;
+    if (!data.remote) {
+      if (photo) { if (!savePhoto(stored.id, photo)) { stored = { ...stored, photo: false }; note = 'Bill saved — photo too big to keep on this phone'; } }
+      else if (photo === null) deletePhoto(stored.id);
+    }
+    if (!(await dispatch({ type: 'saveBill', bill: stored, isNew, photo }))) return;
     close();
-    if (!(photo && !stored.photo)) toast(isNew ? `${name(stored)} ${money(stored.total)} added` : 'Bill updated');
+    toast(note || (isNew ? `${name(stored)} ${money(stored.total)} added` : 'Bill updated'));
   };
 
   const renderOverlay = (o, i) => {
@@ -107,34 +168,35 @@ function Shell() {
       case 'menu': return <AddMenu key={key} onClose={close} go={go} />;
       case 'supplier': return <Supplier key={key} data={data} ins={ins} supplierId={o.id} go={go} onClose={close} />;
       case 'item': return <ItemSheet key={key} data={data} itemId={o.id} onClose={close}
-        onAlert={(it, at, on) => { dispatch({ type: 'alert', itemId: it.id, at, on }); toast(on ? `Alert set at ${money(at)}` : 'Alert off'); close(); }} />;
+        onAlert={async (it, at, on) => { if (!(await dispatch({ type: 'alert', itemId: it.id, at, on }))) return; toast(on ? `Alert set at ${money(at)}` : 'Alert off'); close(); }} />;
       case 'tender': return <TenderSheet key={key} data={data} ins={ins} onClose={close} onSend={() => { toast('Saved — sending goes live with email'); close(); }} />;
       case 'dispute': return <DisputeSheet key={key} data={data} c={o.c} onClose={close}
-        onSent={() => { dispatch({ type: 'dispute', id: o.c.id }); toast('Marked as sent — Watchdog keeps an eye on the next bill'); close(); }} />;
+        onSent={async () => { if (!(await dispatch({ type: 'dispute', id: o.c.id }))) return; toast('Marked as sent — Watchdog keeps an eye on the next bill'); close(); }} />;
       case 'account': return <AccountSheet key={key} data={data} onClose={close} theme={theme} onTheme={setTheme}
+        account={account} onSignIn={onSignIn} onProfile={async (business) => { if (await dispatch({ type: 'profile', business })) toast('Saved'); }}
         onUseSample={(on) => { dispatch({ type: 'useSample', on }); closeAll(); setTab('home'); toast(on ? 'Sample data back on' : 'Fresh start — add your first bill with +'); }} />;
       case 'counter': return <Counter key={key} data={data} ins={ins} presetSupplier={o.supplierId} onClose={close}
-        onHide={(id) => dispatch({ type: 'hide', id })} onLock={(deal) => { dispatch({ type: 'deal', deal }); toast('Deal locked in'); }} />;
+        onHide={(id) => dispatch({ type: 'hide', id })} onLock={async (deal) => { const ok = await dispatch({ type: 'deal', deal }); if (ok) toast('Deal locked in'); return ok; }} />;
       case 'tryBuy': return <TryBuy key={key} data={data} onClose={close}
         onAdd={({ supplierId, amount }) => replace({ type: 'billForm', preset: { supplierId, amount } })} />;
       case 'supplierForm': {
         const supplier = o.id ? data.suppliers.find((s) => s.id === o.id) : null;
         return <SupplierForm key={key} data={data} supplier={supplier} onClose={close}
-          onSave={(s, isNew) => { dispatch({ type: 'saveSupplier', supplier: s, isNew }); close(); toast(isNew ? `${s.name} added` : 'Saved'); }} />;
+          onSave={async (s, isNew) => { if (!(await dispatch({ type: 'saveSupplier', supplier: s, isNew }))) return; close(); toast(isNew ? `${s.name} added` : 'Saved'); }} />;
       }
       case 'billForm': {
         const bill = o.id ? data.bills.find((b) => b.id === o.id) : null;
-        return <BillForm key={key} data={data} bill={bill} preset={o.preset} onClose={close} onSave={saveBill} onNewSupplier={newSupplier} />;
+        return <BillForm key={key} data={data} bill={bill} preset={o.preset} onClose={close} onSave={saveBill} onNewSupplier={newSupplier} canRead={Boolean(account?.access?.has_access)} />;
       }
       case 'bill': {
         const bill = o.pending || data.bills.find((b) => b.id === o.id);
         if (!bill) return null;
         const pending = o.pending && data.queue.some((q) => q.id === o.pending.id) ? o.pending : null;
         return <BillSheet key={key} data={data} bill={bill} pending={pending} onClose={close}
-          onConfirm={() => { go.confirm(bill); close(); }}
-          onPay={() => { const on = bill.paid == null; dispatch({ type: 'pay', id: bill.id, on }); toast(on ? `${name(bill)} ${money(bill.total)} paid` : 'Marked as not paid'); close(); }}
+          onConfirm={async () => { if (await go.confirm(bill)) close(); }}
+          onPay={async () => { const on = bill.paid == null; if (!(await dispatch({ type: 'pay', id: bill.id, on }))) return; toast(on ? `${name(bill)} ${money(bill.total)} paid` : 'Marked as not paid'); close(); }}
           onEdit={() => go.editBill(bill.id)}
-          onDelete={() => { dispatch({ type: 'deleteBill', id: bill.id }); deletePhoto(bill.id); toast('Bill deleted'); close(); }} />;
+          onDelete={async () => { if (!(await dispatch({ type: 'deleteBill', id: bill.id }))) return; deletePhoto(bill.id); toast('Bill deleted'); close(); }} />;
       }
       default: return null;
     }
@@ -143,7 +205,7 @@ function Shell() {
   return (
     <div className="app">
       <main className="scroll" ref={scroller}>
-        {tab === 'home' && <Home data={data} ins={ins} go={go} />}
+        {tab === 'home' && <Home data={data} ins={ins} go={go} account={account} />}
         {tab === 'bills' && <Bills data={data} ins={ins} go={go} />}
         {tab === 'suppliers' && <Suppliers data={data} ins={ins} go={go} />}
         {tab === 'deals' && <Deals data={data} ins={ins} go={go} />}

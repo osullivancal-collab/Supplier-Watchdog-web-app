@@ -36,9 +36,19 @@ shared with SoleTasker, and SoleTasker's code was only read, never changed.
   lines add up, is GST about a tenth, is the due date after the invoice date,
   is this a statement or quote rather than a bill. The tradie sees those flags
   and confirms before anything is saved.
-- **App side** (`src/lib/backend.js`): email sign-in link, trial status,
-  reading a bill, starting checkout, opening billing. Not wired into the
-  screens yet. It only loads when the keys exist.
+- **App side**, switched on once the keys exist:
+  - First screen is sign-in by emailed link, with "Just look around" for the
+    sample data on the phone.
+  - Signed in, every change is saved to the database first and only shown once
+    it's saved (`src/lib/remote.js`). If a save fails, the old value stays and
+    the tradie is told why ("trial ended", "already in", "no connection").
+  - Snap a docket reads the photo and fills the form, with any warnings shown,
+    and matches the supplier name to one of theirs ("REECE AUSTRALIA PTY LTD" → Reece).
+  - Photos go to private storage; another phone gets a short-lived link.
+  - Account shows the plan (trial days left / subscribed / payment failed),
+    Monthly / Yearly / Manage billing, business name, and sign out. Home shows a
+    banner when the trial is nearly over or has ended.
+  - Data refreshes when the app comes back to the front, so two devices stay in step.
 
 ## One thing done differently on purpose
 
@@ -69,7 +79,13 @@ flag. (SoleTasker itself has not been changed. That's a separate decision.)
   It never touches a real database.
 - `npm run smoke`: the whole app in a real browser.
 
-## Setup: each step needs a yes from Callan
+## Setup
+
+Callan said yes to all of it on 2026-10-09, on one condition: nothing of
+SoleTasker's is touched, anywhere (see CLAUDE.md).
+
+0. **Callan: make a new Supabase organisation called Watchdog.** The only
+   organisation today is SoleTasker's, and Watchdog must not live inside it.
 
 1. **Create a new Supabase project** for Watchdog (free plan is fine to start; Sydney region).
 2. **Run `001_watchdog_schema.sql`** in that project.
@@ -84,7 +100,6 @@ flag. (SoleTasker itself has not been changed. That's a separate decision.)
 
 ## Not built yet
 
-- Wiring sign-in, trial banner, "Snap a docket → read it" and sync into the screens.
 - Forward-your-bills email address (SoleTasker's email intake is the model; the
   limits and the per-account token are already in place).
 - Account deletion (SoleTasker 040/047 and its purge job are the model).

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Icon from '../components/Icon.jsx';
 import { FullScreen, SignaturePad, SupplierChips } from '../components/UI.jsx';
 import { money0 } from '../lib/format.js';
-import { isoFromOffset, toIso } from '../lib/store.js';
+import { isoFromOffset, newId, toIso } from '../lib/store.js';
 import { describeDeal } from './Deals.jsx';
 
 const MEDAL = ['var(--gold)', 'var(--silver)', 'var(--bronze)'];
@@ -33,17 +33,17 @@ export default function Counter({ data, ins, presetSupplier, onClose, onHide, on
   const top = ranked.slice(0, 3), rest = ranked.slice(3);
   const isShare = draft.kind === 'share';
 
-  const lock = () => {
+  const lock = async () => {
     if (!draft.reward.trim()) return setError('Add what they’re giving you.');
     if (!sig.you || !sig.rep) return setError('You both need to sign.');
     const deal = {
-      id: `d${Date.now()}`, supplierId: draft.supplierId, kind: draft.kind, target: draft.target,
+      id: newId(), supplierId: draft.supplierId, kind: draft.kind, target: draft.target,
       reward: draft.reward.trim(), rep: draft.rep.trim(),
       // Real dates, so the deal window is still right next week.
       startIso: toIso(new Date()), endIso: isoFromOffset(ENDS[draft.ends][1]()),
       signatures: { you: sig.you, rep: sig.rep }, signedAt: new Date().toISOString(),
     };
-    onLock(deal);
+    if (!(await onLock(deal))) return;
     setLocked(deal);
     setComposing(false);
     try { navigator.vibrate?.([10, 40, 20]); } catch { /* not supported */ }

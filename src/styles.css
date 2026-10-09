@@ -300,3 +300,4 @@ input[type='date'] { color-scheme: dark; }
 .catch-icon { width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex: none; }
 .holding .pill { min-width: 64px; }
 .avatar-tile { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-family: var(--display); font-weight: 800; font-size: 16px; flex: none; }
+.btn:disabled { opacity: .55; cursor: default; }

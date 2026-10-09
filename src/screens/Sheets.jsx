@@ -4,7 +4,20 @@ import Icon from '../components/Icon.jsx';
 import { Sheet, SupplierChips, useToast } from '../components/UI.jsx';
 import { dayLabel, dirClass, kfmt, money, pct, whenDue } from '../lib/format.js';
 import { TERMS, dueFromTerms, isCashTerms, itemChange, previewPurchase } from '../lib/model.js';
-import { isoFromOffset, loadPhoto, offsetFromIso, shrinkPhoto, toIso, vendorName } from '../lib/store.js';
+import { daysLeft, openBillingPortal, photoUrl, readInvoice, startCheckout } from '../lib/backend.js';
+import { matchSupplier } from '../lib/match.js';
+import { isoFromOffset, loadPhoto, newId, offsetFromIso, shrinkPhoto, toIso, vendorName } from '../lib/store.js';
+
+/** The docket photo: from this phone if it's here, else a short-lived link from storage. */
+function usePhoto(bill) {
+  const [url, setUrl] = useState(() => (bill?.photo ? loadPhoto(bill.id) : null));
+  useEffect(() => {
+    let alive = true;
+    if (!url && bill?.photoPath) photoUrl(bill.photoPath).then((u) => { if (alive) setUrl(u); });
+    return () => { alive = false; };
+  }, [bill?.photoPath]); // eslint-disable-line react-hooks/exhaustive-deps
+  return url;
+}
 
 // ---------------------------------------------------------------------------
 // The + menu
@@ -35,7 +48,7 @@ export function AddMenu({ onClose, go }) {
 // ---------------------------------------------------------------------------
 // Add / edit a bill
 // ---------------------------------------------------------------------------
-export function BillForm({ data, bill, preset, onClose, onSave, onNewSupplier }) {
+export function BillForm({ data, bill, preset, onClose, onSave, onNewSupplier, canRead = false }) {
   const toast = useToast();
   const editing = !!bill;
   const fileRef = useRef(null);
@@ -49,9 +62,13 @@ export function BillForm({ data, bill, preset, onClose, onSave, onNewSupplier })
   const [due, setDue] = useState(editing ? isoFromOffset(bill.due) : null);
   const [ref, setRef] = useState(bill?.ref || '');
   const [job, setJob] = useState(bill?.job || '');
-  const [photo, setPhoto] = useState(editing && bill.photo ? loadPhoto(bill.id) : null);
+  const savedPhoto = usePhoto(editing ? bill : null);
+  const [photoChange, setPhotoChange] = useState(undefined); // undefined = unchanged, null = removed, else new photo
+  const photo = photoChange === undefined ? savedPhoto : photoChange;
   const [newSup, setNewSup] = useState(null);
   const [error, setError] = useState('');
+  const [reading, setReading] = useState(false);
+  const [read, setRead] = useState(null); // { flags, confidence } from the invoice reader
 
   // Opening "Snap a docket" goes straight to the camera.
   useEffect(() => { if (preset?.photo) fileRef.current?.click(); }, [preset]);
@@ -61,19 +78,45 @@ export function BillForm({ data, bill, preset, onClose, onSave, onNewSupplier })
   const dueOff = terms ? dueFromTerms(issuedOff, terms) : offsetFromIso(due);
   const pickSupplier = (id) => { setSupplierId(id); if (!editing || terms) setTerms(termsOf(id)); };
 
-  const onPhoto = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try { setPhoto(await shrinkPhoto(file)); } catch (err) { toast(err.message); }
+  // Fill the form from what the reader saw. Only fills; the tradie still checks and saves.
+  const applyReading = (r) => {
+    const b = r.bill;
+    if (b.total != null) { setAmount(String(Math.abs(b.total))); setCredit(b.total < 0); }
+    if (b.supplierName) {
+      const hit = matchSupplier(b.supplierName, data.suppliers);
+      if (hit) pickSupplier(hit.id); else setNewSup(b.supplierName);
+    }
+    if (b.issuedOn && b.issuedOn <= toIso(new Date())) setIssued(b.issuedOn);
+    const t = b.terms && TERMS.find((x) => x.toLowerCase() === b.terms.trim().toLowerCase());
+    if (b.dueOn) { setTerms(null); setDue(b.dueOn); } else if (t) setTerms(t);
+    if (b.ref) setRef(b.ref);
+    if (b.job) setJob(b.job);
+    setRead({ flags: r.flags, confidence: r.confidence });
   };
 
-  const save = () => {
+  const onPhoto = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    let shrunk;
+    try { shrunk = await shrinkPhoto(file); setPhotoChange(shrunk); } catch (err) { toast(err.message); return; }
+    if (!canRead || editing) return;
+    setReading(true);
+    try { applyReading(await readInvoice([shrunk])); }
+    catch (err) { console.error('[bill] read failed', err); toast(`${err.message} You can type it in.`); }
+    finally { setReading(false); }
+  };
+
+  const save = async () => {
     const n = Number(String(amount).replace(/[^0-9.]/g, ''));
     if (!supplierId) return setError('Pick who the bill is from.');
     if (!n || n <= 0) return setError('Enter the amount.');
     const total = Math.round(n * 100) / 100 * (credit ? -1 : 1);
     const stored = {
-      id: bill?.id || `u${Date.now()}`,
+      // Keep what the form doesn't show (vendor, stored photo, how it arrived).
+      ...(bill ? { vendor: bill.vendor, photoPath: bill.photoPath, status: bill.status, source: bill.source, confidence: bill.confidence } : {}),
+      ...(read ? { source: 'photo', confidence: read.confidence } : {}),
+      id: bill?.id || newId(),
       supplierId,
       ref: ref.trim(),
       total,
@@ -83,7 +126,7 @@ export function BillForm({ data, bill, preset, onClose, onSave, onNewSupplier })
       job: job.trim() || null,
       photo: !!photo,
     };
-    onSave(stored, !editing, photo);
+    onSave(stored, !editing, editing ? photoChange : (photo || undefined));
   };
 
   return (
@@ -106,9 +149,10 @@ export function BillForm({ data, bill, preset, onClose, onSave, onNewSupplier })
         ) : (
           <div style={{ display: 'flex', gap: 8 }}>
             <input className="input" aria-label="New supplier name" placeholder="Supplier name" value={newSup} autoFocus onChange={(e) => setNewSup(e.target.value)} />
-            <button className="btn btn-primary" style={{ height: 54 }} onClick={() => {
+            <button className="btn btn-primary" style={{ height: 54 }} onClick={async () => {
               if (!newSup.trim()) return;
-              const id = onNewSupplier(newSup.trim());
+              const id = await onNewSupplier(newSup.trim());
+              if (!id) return;
               setNewSup(null); setSupplierId(id); setTerms('30 days EOM');
             }}>Add</button>
           </div>
@@ -147,15 +191,22 @@ export function BillForm({ data, bill, preset, onClose, onSave, onNewSupplier })
         {photo ? (
           <div style={{ position: 'relative' }}>
             <img className="photo-thumb" src={photo} alt="Docket" />
-            <button className="icon-btn" aria-label="Remove photo" onClick={() => setPhoto(null)} style={{ position: 'absolute', top: 8, right: 8 }}><Icon name="close" size={18} /></button>
+            <button className="icon-btn" aria-label="Remove photo" onClick={() => setPhotoChange(null)} style={{ position: 'absolute', top: 8, right: 8 }}><Icon name="close" size={18} /></button>
           </div>
         ) : (
           <button className="btn btn-secondary btn-block" onClick={() => fileRef.current?.click()}><Icon name="camera" size={20} />Photo of the docket</button>
         )}
       </div>
 
+      {reading && <div className="tag" role="status" style={{ height: 'auto', padding: '10px 12px', fontSize: 15 }}>Reading the docket…</div>}
+      {read && (
+        <div className="card" style={{ background: 'var(--bg)', boxShadow: 'none', display: 'flex', flexDirection: 'column', gap: 8 }} role="status">
+          <div style={{ fontWeight: 800 }}>{read.flags.length ? 'Read it — check these' : 'Read it — check and save'}</div>
+          {read.flags.map((f) => <div key={f.kind} className="muted" style={{ fontSize: 14 }}>• {f.text}</div>)}
+        </div>
+      )}
       {error && <div className="error" role="alert">{error}</div>}
-      <button className="btn btn-primary btn-block" onClick={save}>{editing ? 'Save changes' : credit ? 'Add credit' : 'Add bill'}</button>
+      <button className="btn btn-primary btn-block" disabled={reading} onClick={save}>{editing ? 'Save changes' : credit ? 'Add credit' : 'Add bill'}</button>
     </Sheet>
   );
 }
@@ -165,7 +216,7 @@ export function BillForm({ data, bill, preset, onClose, onSave, onNewSupplier })
 // ---------------------------------------------------------------------------
 export function BillSheet({ data, bill, pending, onClose, onPay, onEdit, onDelete, onConfirm }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const photo = bill.photo ? loadPhoto(bill.id) : null;
+  const photo = usePhoto(bill);
   const paid = bill.paid != null;
   const credit = bill.total < 0;
   return (
@@ -218,11 +269,11 @@ export function SupplierForm({ data, supplier, onClose, onSave }) {
   const [f, setF] = useState({ name: '', terms: '30 days EOM', rep: '', phone: '', account: '', branch: '', ...(supplier || {}) });
   const [error, setError] = useState('');
   const set = (k) => (e) => { setError(''); setF((x) => ({ ...x, [k]: e.target.value })); };
-  const save = () => {
+  const save = async () => {
     const name = f.name.trim();
     if (!name) return setError('Give the supplier a name.');
     if (data.suppliers.some((s) => s.id !== supplier?.id && s.name.toLowerCase() === name.toLowerCase())) return setError(`${name} is already in your list.`);
-    onSave({ ...f, name, id: supplier?.id || `s${Date.now()}` }, !supplier);
+    onSave({ ...f, name, id: supplier?.id || newId() }, !supplier);
   };
   return (
     <Sheet title={supplier ? `Edit ${supplier.name}` : 'Add a supplier'} onClose={onClose}>
@@ -333,30 +384,52 @@ export function ItemSheet({ data, itemId, onClose, onAlert }) {
 // ---------------------------------------------------------------------------
 // Account
 // ---------------------------------------------------------------------------
-export function AccountSheet({ data, onClose, onUseSample, theme, onTheme }) {
+export function AccountSheet({ data, onClose, onUseSample, theme, onTheme, account, onSignIn, onProfile }) {
   const toast = useToast();
   const [confirm, setConfirm] = useState(false);
   const copy = async () => {
     try { await navigator.clipboard.writeText(data.business.forwardAddress); toast('Address copied'); } catch { toast('Press and hold the address to copy'); }
   };
+  const look = (
+    <div className="field">
+      <span className="label">Look</span>
+      <div className="seg" role="tablist" aria-label="Look">
+        {[['light', 'Light'], ['dark', 'Dark'], ['auto', 'Match phone']].map(([k, l]) => <button key={k} role="tab" aria-selected={theme === k} onClick={() => onTheme(k)}>{l}</button>)}
+      </div>
+      <span className="muted" style={{ fontSize: 13 }}>Light reads best in full sun.</span>
+    </div>
+  );
+
+  if (account) {
+    return (
+      <Sheet title="Account" onClose={onClose}>
+        <PlanCard access={account.access} />
+        <BusinessFields business={data.business} onSave={onProfile} />
+        {look}
+        <div className="card" style={{ background: 'var(--bg)' }}>
+          <div className="label">Forward bills to</div>
+          <div style={{ fontWeight: 700, marginTop: 6 }}>Coming soon</div>
+          <p className="muted" style={{ marginTop: 4, fontSize: 14 }}>Your own address for supplier emails, so bills add themselves.</p>
+        </div>
+        <div className="muted" style={{ fontSize: 14 }}>Signed in as {account.email}</div>
+        <button className="btn btn-secondary btn-block" onClick={account.signOut}>Sign out</button>
+      </Sheet>
+    );
+  }
+
   return (
     <Sheet title="Account" onClose={onClose}>
-      <div className="card" style={{ background: 'var(--bg)' }}>
-        <div className="label">Forward bills to</div>
-        <div className="num" style={{ fontSize: 17, fontWeight: 700, marginTop: 6, wordBreak: 'break-all', userSelect: 'all' }}>{data.business.forwardAddress}</div>
-        <span className="tag warn" style={{ marginTop: 10 }}>Coming soon</span>
-      </div>
-      <button className="btn btn-secondary btn-block" onClick={copy}><Icon name="copy" size={18} />Copy address</button>
-      <div className="field">
-        <span className="label">Look</span>
-        <div className="seg" role="tablist" aria-label="Look">
-          {[['light', 'Light'], ['dark', 'Dark'], ['auto', 'Match phone']].map(([k, l]) => <button key={k} role="tab" aria-selected={theme === k} onClick={() => onTheme(k)}>{l}</button>)}
+      {onSignIn && (
+        <div className="card" style={{ background: 'var(--bg)' }}>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>Keep your bills safe</div>
+          <p className="muted" style={{ marginTop: 6 }}>Sign in to back them up and see them on every device. 14 days free.</p>
+          <button className="btn btn-primary btn-block" style={{ marginTop: 14 }} onClick={onSignIn}>Sign in or sign up</button>
         </div>
-        <span className="muted" style={{ fontSize: 13 }}>Light reads best in full sun.</span>
-      </div>
+      )}
+      {look}
       <div className="card" style={{ background: 'var(--bg)' }}>
         <div style={{ fontWeight: 800, fontSize: 17 }}>{data.useSample ? 'Showing sample data' : 'Your own data'}</div>
-        <p className="muted" style={{ marginTop: 6 }}>{data.useSample ? 'Have a play. When you\'re ready, start fresh and add your real bills.' : 'Everything you add stays on this phone for now.'}</p>
+        <p className="muted" style={{ marginTop: 6 }}>{data.useSample ? 'Have a play. When you\'re ready, start fresh and add your real bills.' : 'Everything you add stays on this phone.'}</p>
         {confirm ? (
           <button className="btn btn-danger btn-block" style={{ marginTop: 14 }} onClick={() => onUseSample(!data.useSample)}>
             {data.useSample ? 'Yes — clear it and start fresh' : 'Yes — wipe my bills, show sample'}
@@ -371,6 +444,54 @@ export function AccountSheet({ data, onClose, onUseSample, theme, onTheme }) {
   );
 }
 
+function PlanCard({ access }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState('');
+  const go = async (what, fn) => {
+    setBusy(what);
+    try { await fn(); } catch (err) { console.error('[billing]', err); toast(err.message || 'Billing is unavailable right now.'); setBusy(''); }
+  };
+  if (!access) return <div className="card" style={{ background: 'var(--bg)' }}><div className="muted">Checking your plan…</div></div>;
+  const paid = ['active', 'trialing', 'past_due', 'unpaid'].includes(access.subscription_status);
+  const left = daysLeft(access.trial_ends_at);
+  const title = access.subscription_status === 'grandfathered' ? 'Free for life'
+    : access.subscription_status === 'active' || access.subscription_status === 'trialing' ? 'Subscribed'
+    : access.subscription_status === 'past_due' || access.subscription_status === 'unpaid' ? 'Payment didn’t go through'
+    : access.trial_active ? `Free trial · ${left} day${left === 1 ? '' : 's'} left`
+    : 'Free trial ended';
+  return (
+    <div className="card" style={{ background: 'var(--bg)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div>
+        <div className="label">Your plan</div>
+        <div style={{ fontWeight: 800, fontSize: 19, marginTop: 4 }}>{title}</div>
+        {!access.has_access && <p className="muted" style={{ marginTop: 4 }}>You can still see everything. Subscribe to keep adding bills.</p>}
+      </div>
+      {access.subscription_status === 'grandfathered' ? null : paid ? (
+        <button className="btn btn-secondary btn-block" disabled={!!busy} onClick={() => go('portal', openBillingPortal)}>{busy ? 'Opening…' : 'Manage billing'}</button>
+      ) : (
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn btn-secondary" style={{ flex: 1 }} disabled={!!busy} onClick={() => go('month', () => startCheckout('month'))}>{busy === 'month' ? 'Opening…' : 'Monthly'}</button>
+          <button className="btn btn-primary" style={{ flex: 1 }} disabled={!!busy} onClick={() => go('year', () => startCheckout('year'))}>{busy === 'year' ? 'Opening…' : 'Yearly'}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BusinessFields({ business, onSave }) {
+  const [owner, setOwner] = useState(business.owner || '');
+  const [name, setName] = useState(business.name === 'Your business' ? '' : business.name || '');
+  const changed = owner !== (business.owner || '') || name !== (business.name === 'Your business' ? '' : business.name || '');
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <label className="field"><span className="label">Your name</span>
+        <input className="input" value={owner} maxLength={120} autoComplete="name" onChange={(e) => setOwner(e.target.value)} /></label>
+      <label className="field"><span className="label">Business name</span>
+        <input className="input" value={name} maxLength={160} autoComplete="organization" onChange={(e) => setName(e.target.value)} /></label>
+      {changed && <button className="btn btn-primary btn-block" onClick={() => onSave({ owner: owner.trim(), name: name.trim() })}>Save</button>}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Dispute something Watchdog caught: a ready-to-send message to the rep
