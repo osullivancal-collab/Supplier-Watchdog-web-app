@@ -8,7 +8,7 @@ import Bills from './screens/Bills.jsx';
 import Counter from './screens/Counter.jsx';
 import Deals, { TenderSheet } from './screens/Deals.jsx';
 import Home from './screens/Home.jsx';
-import { AccountSheet, AddMenu, BillForm, BillSheet, ItemSheet, SupplierForm, TryBuy } from './screens/Sheets.jsx';
+import { AccountSheet, AddMenu, BillForm, BillSheet, DisputeSheet, ItemSheet, SupplierForm, TryBuy } from './screens/Sheets.jsx';
 import Supplier from './screens/Supplier.jsx';
 import Suppliers from './screens/Suppliers.jsx';
 
@@ -39,8 +39,22 @@ function useOverlays() {
   return { stack, open, replace, close, closeAll };
 }
 
+/** Light by default (readable in sun); dark or "match phone" on request. Kept on this phone. */
+function useTheme() {
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('watchdog.theme') || 'light'; } catch { return 'light'; } });
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', theme);
+    const dark = theme === 'dark' || (theme === 'auto' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0E1317' : '#ECEDE8');
+    try { localStorage.setItem('watchdog.theme', theme); } catch { /* fine: falls back to light next time */ }
+  }, [theme]);
+  return [theme, setTheme];
+}
+
 function Shell() {
   const [data, dispatch] = useStore();
+  const [theme, setTheme] = useTheme();
   const ins = useInsights(data);
   const toast = useToast();
   const [tab, setTab] = useState('home');
@@ -58,6 +72,7 @@ function Shell() {
     item: (id) => open({ type: 'item', id }),
     counter: (supplierId) => fromMenu({ type: 'counter', supplierId }),
     tender: () => open({ type: 'tender' }),
+    dispute: (c) => open({ type: 'dispute', c }),
     account: () => open({ type: 'account' }),
     addBill: (supplierId, extra = {}) => fromMenu({ type: 'billForm', preset: { supplierId, ...extra } }),
     editBill: (id) => replace({ type: 'billForm', id }),
@@ -94,7 +109,9 @@ function Shell() {
       case 'item': return <ItemSheet key={key} data={data} itemId={o.id} onClose={close}
         onAlert={(it, at, on) => { dispatch({ type: 'alert', itemId: it.id, at, on }); toast(on ? `Alert set at ${money(at)}` : 'Alert off'); close(); }} />;
       case 'tender': return <TenderSheet key={key} data={data} ins={ins} onClose={close} onSend={() => { toast('Saved — sending goes live with email'); close(); }} />;
-      case 'account': return <AccountSheet key={key} data={data} onClose={close}
+      case 'dispute': return <DisputeSheet key={key} data={data} c={o.c} onClose={close}
+        onSent={() => { dispatch({ type: 'dispute', id: o.c.id }); toast('Marked as sent — Watchdog keeps an eye on the next bill'); close(); }} />;
+      case 'account': return <AccountSheet key={key} data={data} onClose={close} theme={theme} onTheme={setTheme}
         onUseSample={(on) => { dispatch({ type: 'useSample', on }); closeAll(); setTab('home'); toast(on ? 'Sample data back on' : 'Fresh start — add your first bill with +'); }} />;
       case 'counter': return <Counter key={key} data={data} ins={ins} presetSupplier={o.supplierId} onClose={close}
         onHide={(id) => dispatch({ type: 'hide', id })} onLock={(deal) => { dispatch({ type: 'deal', deal }); toast('Deal locked in'); }} />;
@@ -124,7 +141,7 @@ function Shell() {
   };
 
   return (
-    <div className="app" data-mood={ins.mood}>
+    <div className="app">
       <main className="scroll" ref={scroller}>
         {tab === 'home' && <Home data={data} ins={ins} go={go} />}
         {tab === 'bills' && <Bills data={data} ins={ins} go={go} />}

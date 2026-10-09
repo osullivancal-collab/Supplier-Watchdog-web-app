@@ -4,18 +4,23 @@ import { Spark } from './Charts.jsx';
 import Icon from './Icon.jsx';
 
 /** A supplier as a "holding": name, sparkline, spend and a solid change pill. */
-export function HoldingRow({ s, onOpen, show = 'change' }) {
+const AVATARS = [['var(--hero)', 'var(--accent)'], ['var(--card-2)', 'var(--text)'], ['var(--due-soft)', 'var(--due)'], ['var(--down-soft)', 'var(--down)'], ['var(--up-soft)', 'var(--up)']];
+export const initials = (name) => name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+
+export function HoldingRow({ s, onOpen, show = 'change', index = 0 }) {
+  const [avBg, avFg] = AVATARS[index % AVATARS.length];
   const tone = dirClass(s.change);
   const sub = s.spend > 0
     ? `${s.share.toFixed(0)}%${s.owed > 0 ? ` · ${kfmt(s.owed)} owed` : ' of spend'}`
     : 'No bills yet';
   return (
-    <button className="holding" onClick={() => onOpen(s.id)}>
+    <button className="holding" onClick={() => onOpen(s.id)} style={{ gridTemplateColumns: '40px minmax(0, 1fr) 56px auto', gap: 10 }}>
+      <span className="avatar-tile" style={{ background: avBg, color: avFg }}>{initials(s.name)}</span>
       <div style={{ minWidth: 0 }}>
         <div className="holding-name">{s.name}</div>
         <div className="holding-sub num">{sub}</div>
       </div>
-      <Spark values={s.spark} tone={tone} />
+      <Spark values={s.spark} tone={tone} width={56} />
       <div className="holding-right">
         <span className="holding-amt num">{money0(show === 'owed' ? s.owed : s.spend)}</span>
         <span className={`pill num ${s.spend > 0 ? tone : 'flat'}`}>{s.spend > 0 ? pct(s.change) : '—'}</span>

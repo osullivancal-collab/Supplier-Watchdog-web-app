@@ -1,24 +1,23 @@
-import { useState } from 'react';
-import { AreaSteps, PriceSteps } from '../components/Charts.jsx';
+import { useMemo, useState } from 'react';
+import { DotChart, PriceSteps } from '../components/Charts.jsx';
 import Icon from '../components/Icon.jsx';
 import { BillRow } from '../components/Rows.jsx';
 import { FullScreen, useToast } from '../components/UI.jsx';
 import { dayLabel, dirClass, money, money0, pct, whenDue } from '../lib/format.js';
-import { itemChange, overpay, rollingSpend } from '../lib/model.js';
+import { itemChange, overpay, spendBuckets } from '../lib/model.js';
+import { bucketDescriber } from '../lib/buckets.js';
 import { describeDeal, dealLine } from './Deals.jsx';
 
-const RANGES = { '3M': 90, '6M': 180, '1Y': 365 };
+const RANGES = ['3M', '6M', '1Y'];
 
 export default function Supplier({ data, ins, supplierId, go, onClose }) {
   const toast = useToast();
   const [range, setRange] = useState('3M');
-  const [scrub, setScrub] = useState(null);
+  const nameOf = (id) => data.suppliers.find((x) => x.id === id)?.name || id || 'Other';
+  const buckets = useMemo(() => spendBuckets(data.bills, range, { supplierId }), [data.bills, range, supplierId]);
   const s = ins.ranked.find((x) => x.id === supplierId);
   if (!s) return null;
   const tone = dirClass(s.change);
-  const series = rollingSpend(data.bills, s.id, RANGES[range]);
-  const shownValue = scrub == null ? s.spend : series[scrub];
-  const label = scrub == null ? 'Last 90 days' : `30 days to ${dayLabel(scrub - (series.length - 1))}`;
   const over = overpay(data.items, s.id);
   const deals = data.deals.filter((d) => d.supplierId === s.id);
   const items = data.items.filter((it) => it.latest[s.id] != null);
@@ -38,16 +37,20 @@ export default function Supplier({ data, ins, supplierId, go, onClose }) {
           <h1 className="title">{s.name}</h1>
           {s.rank <= 3 && s.spend > 0 && <span className="tag" style={{ color: ['var(--gold)', 'var(--silver)', 'var(--bronze)'][s.rank - 1] }}>#{s.rank}</span>}
         </div>
-        <div className="hero-label" style={{ marginTop: 8 }}>{label}</div>
-        <div className="hero-value num">{money0(shownValue)}</div>
+        <div className="hero-label" style={{ marginTop: 8 }}>Last 90 days</div>
+        <div className="hero-value num">{money0(s.spend)}</div>
         <div className="hero-change">
-          {scrub == null && s.spend > 0 && <span className={`pill num ${tone}`}>{pct(s.change)}</span>}
-          <span className="muted">{scrub == null ? 'vs the 90 days before' : 'spent with them'}</span>
+          {s.spend > 0 && <span className={`pill num ${tone}`}>{pct(s.change)}</span>}
+          <span className="muted">vs the 90 days before</span>
         </div>
       </div>
-      <AreaSteps values={series} tone={tone} scrub={scrub} onScrub={setScrub} />
-      <div className="periods">
-        {Object.keys(RANGES).map((r) => <button key={r} className="period" aria-pressed={range === r} onClick={() => setRange(r)}>{r}</button>)}
+      <div style={{ padding: '14px 16px 0' }}>
+        <section className="card">
+          <div className="seg" role="tablist" aria-label="Range">
+            {RANGES.map((r) => <button key={r} role="tab" aria-selected={range === r} onClick={() => setRange(r)}>{r}</button>)}
+          </div>
+          <div style={{ marginTop: 12 }}><DotChart key={range} data={buckets} describe={bucketDescriber(buckets.unit, nameOf)} /></div>
+        </section>
       </div>
 
       <div className="page" style={{ paddingTop: 24 }}>

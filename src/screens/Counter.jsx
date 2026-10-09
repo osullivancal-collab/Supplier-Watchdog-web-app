@@ -90,7 +90,7 @@ export default function Counter({ data, ins, presetSupplier, onClose, onHide, on
         </div>
 
         {locked && (
-          <div className="card" style={{ position: 'relative', border: '2px solid var(--mood)' }}>
+          <div className="card" style={{ position: 'relative', border: '2px solid var(--link)' }}>
             <div className="label">Shook on it</div>
             <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4, paddingRight: 90 }}>{describeDeal(locked, data.suppliers)}</div>
             <div style={{ marginTop: 6, fontWeight: 600 }}>{locked.reward} · {ENDS[draft.ends][0].toLowerCase()}</div>

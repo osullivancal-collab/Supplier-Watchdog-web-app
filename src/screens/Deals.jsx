@@ -45,7 +45,7 @@ export default function Deals({ data, ins, go }) {
         </div>
       )}
 
-      <button className="card card-tap" onClick={() => go.counter()} style={{ background: 'var(--mood)', color: 'var(--mood-ink)', display: 'flex', alignItems: 'center', gap: 14 }}>
+      <button className="card card-tap" onClick={() => go.counter()} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', display: 'flex', alignItems: 'center', gap: 14 }}>
         <Icon name="handshake" size={30} />
         <span style={{ flex: 1 }}>
           <span style={{ display: 'block', fontSize: 20, fontWeight: 800 }}>Counter mode</span>
@@ -65,7 +65,7 @@ export default function Deals({ data, ins, go }) {
               <div key={d.id} className="card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'baseline' }}>
                   <div style={{ fontWeight: 800, fontSize: 17 }}>{describeDeal(d, data.suppliers)}</div>
-                  <span className={`tag ${hit ? '' : ''}`} style={hit ? { background: 'var(--mood)', color: 'var(--mood-ink)' } : null}>{hit ? 'Hit' : `${p.daysLeft}d left`}</span>
+                  <span className={`tag ${hit ? '' : ''}`} style={hit ? { background: 'var(--down-soft)', color: 'var(--down)' } : null}>{hit ? 'Hit' : `${p.daysLeft}d left`}</span>
                 </div>
                 <div className="bar-track" style={{ marginTop: 14 }}><div className="bar-fill" style={{ width: `${p.pct}%` }} /></div>
                 <div className="num" style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 15, fontWeight: 600 }}>
@@ -87,9 +87,9 @@ export default function Deals({ data, ins, go }) {
           <div className="bar-track" style={{ marginTop: 14 }}><div className="bar-fill" style={{ width: `${Math.min(100, (ytd / rb.threshold) * 100)}%` }} /></div>
           <div className="num" style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 15, fontWeight: 600 }}>
             <span>{money0(ytd)} this year</span>
-            <span className={ytd >= rb.threshold ? 'mood' : 'muted'}>{ytd >= rb.threshold ? 'Reached' : `${money0(rb.threshold - ytd)} to go`}</span>
+            <span className={ytd >= rb.threshold ? 'down' : 'muted'}>{ytd >= rb.threshold ? 'Reached' : `${money0(rb.threshold - ytd)} to go`}</span>
           </div>
-          <div className="mood" style={{ marginTop: 8, fontWeight: 700 }}>≈ {money0(Math.max(ytd, rb.threshold) * rb.rate)} back to you</div>
+          <div className="down" style={{ marginTop: 8, fontWeight: 700 }}>≈ {money0(Math.max(ytd, rb.threshold) * rb.rate)} back to you</div>
         </section>
       )}
 

@@ -41,3 +41,4 @@ export function whenDue(off) {
   return `Due in ${off} days`;
 }
 export const monthName = (i) => MON[((i % 12) + 12) % 12];
+export function todayLabel(d = new Date()) { return `${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}`; }

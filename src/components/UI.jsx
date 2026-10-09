@@ -134,7 +134,7 @@ export function SupplierChips({ suppliers, value, onChange, onNew }) {
       {suppliers.map((s) => (
         <button key={s.id} className="chip" aria-pressed={s.id === value} onClick={() => onChange(s.id)}>{s.name}</button>
       ))}
-      {onNew && <button className="chip" onClick={onNew} style={{ color: 'var(--mood)' }}>+ New</button>}
+      {onNew && <button className="chip" onClick={onNew} style={{ color: 'var(--link)' }}>+ New</button>}
     </div>
   );
 }

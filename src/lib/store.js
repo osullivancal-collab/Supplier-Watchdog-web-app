@@ -26,6 +26,7 @@ export const emptyState = {
   alerts: { copper: { at: 65, on: true } },
   deals: [],
   hidden: [],
+  disputes: {},             // catch id → 'YYYY-MM-DD' the dispute was sent (or dismissed)
 };
 
 export const toIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -66,6 +67,7 @@ export function reducer(state, a) {
     case 'alert': return { ...state, alerts: { ...state.alerts, [a.itemId]: { at: a.at, on: a.on } } };
     case 'deal': return { ...state, deals: [a.deal, ...state.deals] };
     case 'hide': return { ...state, hidden: state.hidden.includes(a.id) ? state.hidden.filter((x) => x !== a.id) : [...state.hidden, a.id] };
+    case 'dispute': return { ...state, disputes: { ...state.disputes, [a.id]: toIso(new Date()) } };
     case 'useSample': return { ...emptyState, useSample: a.on, alerts: a.on ? emptyState.alerts : {} };
     default: return state;
   }
@@ -109,6 +111,7 @@ export function derive(state) {
     rebate: base.rebate,
     alerts: state.alerts,
     hidden: state.hidden,
+    disputes: state.disputes || {},
     jobs: [...new Set(bills.map((b) => b.job).filter(Boolean))].sort(),
   };
 }

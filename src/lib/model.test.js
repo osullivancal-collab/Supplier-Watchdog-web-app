@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  aheadSeries, basketIndex, billShock, dealProgress, dayOffset, dueFromTerms, monthlySpend, previewPurchase, rollingSpend,
+  aheadSeries, basketIndex, billShock, catches, dealProgress, dayOffset, dueFromTerms, findDuplicates, monthlySpend, previewPurchase, rollingSpend, spendBuckets,
   overpay, owedSeries, supplierStats, totalOwed,
 } from './model.js';
 
@@ -167,5 +167,53 @@ describe('try a buy', () => {
   it('a cash purchase is paid on the spot and owes nothing', () => {
     const p = previewPurchase([], { supplierId: 'a', amount: 100, terms: 'COD' });
     expect(p.owedAfter).toBe(0);
+  });
+});
+
+describe('dot chart buckets', () => {
+  const today = new Date(2026, 9, 9);
+  const bills = [
+    bill({ supplierId: 'a', total: 100, issued: 0, due: 3 }),
+    bill({ supplierId: 'b', total: 50, issued: -1, due: 9, paid: -1 }),
+    bill({ supplierId: 'a', total: 70, issued: -40, due: -5 }),          // overdue → goes out tomorrow
+  ];
+  it('one dot per day on 1M, with what is due ahead', () => {
+    const r = spendBuckets(bills, '1M', { today });
+    expect(r.unit).toBe('day');
+    expect(r.past).toHaveLength(30);
+    expect(r.past.at(-1)).toMatchObject({ total: 100, count: 1, top: 'a' });
+    expect(r.ahead[0].total).toBe(70);   // tomorrow: the overdue bill
+    expect(r.ahead[2].total).toBe(100);  // day 3
+  });
+  it('one dot per week on 3M and 6M, per month on 1Y', () => {
+    expect(spendBuckets(bills, '3M', { today }).past).toHaveLength(13);
+    expect(spendBuckets(bills, '6M', { today }).past).toHaveLength(26);
+    const y = spendBuckets(bills, '1Y', { today });
+    expect(y.unit).toBe('month');
+    expect(y.past).toHaveLength(12);
+    expect(y.past.at(-1).total).toBe(150);   // October so far
+    expect(y.ahead).toHaveLength(2);
+  });
+  it('can be narrowed to one supplier', () => {
+    expect(spendBuckets(bills, '1M', { today, supplierId: 'b' }).past.at(-2).total).toBe(50);
+  });
+});
+
+describe('caught money', () => {
+  it('flags the same supplier billing the same amount twice in a week', () => {
+    const d = findDuplicates([
+      bill({ supplierId: 'a', total: 2310, issued: -3, due: 20, ref: 'TL-1' }),
+      bill({ supplierId: 'a', total: 2310, issued: 0, due: 22, ref: 'TL-2' }),
+      bill({ supplierId: 'a', total: 2310, issued: -30, due: 0, ref: 'TL-0' }),
+      bill({ supplierId: 'b', total: 2310, issued: 0, due: 22, ref: 'X' }),
+    ]);
+    expect(d).toHaveLength(1);
+    expect(d[0].a.ref).toBe('TL-1');
+  });
+  it('turns price gaps into dollar catches, biggest first', () => {
+    const items = [{ id: 'x', name: 'Cable', qtyPerQuarter: 10, history: [100, 110], latest: { a: 110, b: 100 } }];
+    const c = catches({ bills: [], items, suppliers: [{ id: 'a' }, { id: 'b' }] });
+    expect(c).toHaveLength(1);
+    expect(c[0]).toMatchObject({ kind: 'price', supplierId: 'a', amount: 100 });
   });
 });

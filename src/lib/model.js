@@ -214,3 +214,85 @@ export function previewPurchase(bills, { supplierId, amount, terms }, today = ne
   const before = billShock(bills), after = billShock([...bills, bill]);
   return { due, before, after, owedBefore: totalOwed(bills), owedAfter: totalOwed([...bills, bill]) };
 }
+
+// ---------------------------------------------------------------------------
+// Dot chart buckets: one dot = one day (1M), one week (3M, 6M) or one month
+// (1Y). Past dots are what was billed in that period; dots ahead of today are
+// what falls due in that period (overdue bills count as going out tomorrow).
+// ---------------------------------------------------------------------------
+export function spendBuckets(bills, range, { supplierId = null, today = new Date() } = {}) {
+  const mine = supplierId ? bills.filter((b) => b.supplierId === supplierId) : bills;
+  const open = mine.filter((b) => b.paid == null);
+  const billed = (from, to) => summarise(mine.filter((b) => b.issued >= from && b.issued <= to), from, to);
+  const due = (from, to) => summarise(open.filter((b) => Math.max(b.due, 1) >= from && Math.max(b.due, 1) <= to), from, to);
+  const past = [], ahead = [];
+  let unit;
+  if (range === '1M') {
+    unit = 'day';
+    for (let d = -29; d <= 0; d++) past.push(billed(d, d));
+    for (let d = 1; d <= 10; d++) ahead.push(due(d, d));
+  } else if (range === '1Y') {
+    unit = 'month';
+    for (let m = 11; m >= 0; m--) {
+      const from = dayOffset(new Date(today.getFullYear(), today.getMonth() - m, 1), today);
+      const end = dayOffset(new Date(today.getFullYear(), today.getMonth() - m + 1, 0), today);
+      // `full` = days in the month, so a part-month can be compared at its pace.
+      past.push({ ...billed(from, Math.min(0, end)), full: end - from + 1 });
+    }
+    const endThis = dayOffset(new Date(today.getFullYear(), today.getMonth() + 1, 0), today);
+    const endNext = dayOffset(new Date(today.getFullYear(), today.getMonth() + 2, 0), today);
+    ahead.push(due(1, Math.max(1, endThis)), due(endThis + 1, endNext));
+  } else {
+    unit = 'week';
+    const n = range === '6M' ? 26 : 13;
+    for (let w = n - 1; w >= 0; w--) past.push(billed(-7 * w - 6, -7 * w));
+    for (let w = 0; w < 5; w++) ahead.push(due(1 + 7 * w, 7 + 7 * w));
+  }
+  const done = past.slice(0, -1).map((p) => p.total);
+  const avg = done.length ? done.reduce((a, b) => a + b, 0) / done.length : 0;
+  let streak = 0;
+  for (let i = done.length - 1; i >= 0 && done[i] < avg; i--) streak++;
+  return { unit, past, ahead, avg: round2(avg), streak };
+}
+
+function summarise(list, from, to) {
+  const by = {};
+  for (const b of list) { const k = b.supplierId || b.vendor || 'other'; by[k] = (by[k] || 0) + b.total; }
+  const top = Object.keys(by).sort((a, b) => by[b] - by[a])[0] || null;
+  return { from, to, total: round2(sum(list)), count: list.length, top, bills: list };
+}
+
+/**
+ * Likely double-billing: same supplier, same amount (to the cent), dated within
+ * a week of each other, different bills. Credits are ignored.
+ */
+export function findDuplicates(bills) {
+  const out = [];
+  const list = bills.filter((b) => b.supplierId && b.total > 0).sort((a, b) => a.issued - b.issued);
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length && list[j].issued - list[i].issued <= 7; j++) {
+      const a = list[i], b = list[j];
+      if (a.supplierId === b.supplierId && Math.abs(a.total - b.total) < 0.005 && a.id !== b.id && (a.ref || '') !== (b.ref || 'x')) {
+        out.push({ a, b });
+      }
+    }
+  }
+  return out;
+}
+
+/** Everything Watchdog has caught: price creep against your own best price, and likely double-bills. */
+export function catches({ bills, items, suppliers }) {
+  const out = [];
+  for (const s of suppliers) {
+    for (const l of overpay(items, s.id).lines) {
+      out.push({
+        id: `price-${s.id}-${l.item.id}`, kind: 'price', supplierId: s.id, amount: round2((l.mine - l.best) * l.item.qtyPerQuarter),
+        item: l.item, mine: l.mine, best: l.best, bestId: l.bestId,
+      });
+    }
+  }
+  for (const { a, b } of findDuplicates(bills)) {
+    out.push({ id: `dup-${a.id}-${b.id}`, kind: 'duplicate', supplierId: b.supplierId, amount: b.total, a, b });
+  }
+  return out.sort((x, y) => y.amount - x.amount);
+}

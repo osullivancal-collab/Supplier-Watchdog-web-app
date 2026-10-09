@@ -46,7 +46,7 @@ export default function Bills({ data, ins, go }) {
 
       {tab === 'confirm' && (
         data.queue.length === 0
-          ? <div className="card empty"><Icon name="check" size={32} style={{ color: 'var(--mood)' }} /><div className="h2">All caught up</div><p className="muted">Bills emailed to you land here to check.</p></div>
+          ? <div className="card empty"><Icon name="check" size={32} style={{ color: 'var(--down)' }} /><div className="h2">All caught up</div><p className="muted">Bills emailed to you land here to check.</p></div>
           : data.queue.map((q) => (
             <div key={q.id} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: -12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
@@ -67,7 +67,7 @@ export default function Bills({ data, ins, go }) {
 
       {tab === 'pay' && (
         open.length === 0
-          ? <div className="card empty"><Icon name="check" size={32} style={{ color: 'var(--mood)' }} /><div className="h2">Nothing owing</div><button className="btn btn-primary" onClick={() => go.addBill()}>Add a bill</button></div>
+          ? <div className="card empty"><Icon name="check" size={32} style={{ color: 'var(--down)' }} /><div className="h2">Nothing owing</div><button className="btn btn-primary" onClick={() => go.addBill()}>Add a bill</button></div>
           : GROUPS.map(([title, test]) => {
             const list = open.filter(test);
             if (!list.length) return null;

@@ -1,181 +1,167 @@
-import { useState } from 'react';
-import { Donut, Gauge, MonthBars, StepChart } from '../components/Charts.jsx';
+import { useMemo, useState } from 'react';
+import { DotChart } from '../components/Charts.jsx';
 import Icon from '../components/Icon.jsx';
 import { HoldingRow } from '../components/Rows.jsx';
 import { useCountUp } from '../components/UI.jsx';
-import { dateParts, dayLabel, dirClass, kfmt, money, money0, monthName, pct, whenDue } from '../lib/format.js';
-import { shockTone } from '../lib/insights.js';
+import { bucketDescriber, greeting } from '../lib/buckets.js';
+import { dateParts, kfmt, money, money0, todayLabel, whenDue } from '../lib/format.js';
+import { catches as findCatches, spendBuckets } from '../lib/model.js';
 import { vendorName } from '../lib/store.js';
 
-const PERIODS = { '1M': 31, '3M': 92, '6M': 183, '1Y': 365 };
-const PERIOD_NAME = { '1M': 'past month', '3M': 'past 3 months', '6M': 'past 6 months', '1Y': 'past year' };
-const VIEWS = [['owed', 'Owed'], ['spend', 'Spend'], ['mix', 'Mix'], ['shock', 'Shock']];
+const RANGES = ['1M', '3M', '6M', '1Y'];
 
 export default function Home({ data, ins, go }) {
-  const [view, setView] = useState('owed');
-  const [period, setPeriod] = useState('3M');
-  const [scrub, setScrub] = useState(null);
-  const [month, setMonth] = useState(ins.months.length - 1);
+  const [range, setRange] = useState('3M');
+  const nameOf = (id) => data.suppliers.find((s) => s.id === id)?.name || id || 'Other';
   const name = (b) => vendorName(b, data.suppliers);
+  const buckets = useMemo(() => spendBuckets(data.bills, range), [data.bills, range]);
+  const caught = useMemo(() => findCatches(data).filter((c) => !data.disputes[c.id]), [data]);
+  const owed = useCountUp(ins.owed);
   const sh = ins.shock;
-
-  const past = ins.history.slice(-(PERIODS[period] + 1));
-  const pastValues = past.map((d) => d.owed);
   const incoming = data.queue[0];
-
-  // ----- hero: changes with the view and with your finger on the chart -----
-  let hero;
-  if (view === 'owed') {
-    if (!scrub) {
-      const diff = ins.owed - pastValues[0];
-      const p = pastValues[0] ? (diff / pastValues[0]) * 100 : 0;
-      hero = { label: 'You owe', value: ins.owed, pill: { tone: dirClass(p), text: `${diff >= 0 ? '+' : '−'}${money0(Math.abs(diff))}` }, note: PERIOD_NAME[period] };
-    } else if (scrub.kind === 'past') {
-      const d = past[scrub.index];
-      const what = [d.ins.length && `+${money0(sum(d.ins))} from ${unique(d.ins.map(name)).join(', ')}`, d.outs.length && `−${money0(sum(d.outs))} paid`].filter(Boolean).join(' · ');
-      hero = { label: dayLabel(d.day), value: d.owed, note: what || 'No bills that day' };
-    } else {
-      const d = ins.ahead[scrub.index];
-      hero = { label: `Left after ${dayLabel(d.day)}`, value: d.owed,
-        pill: d.due.length ? { tone: 'up', text: `−${money0(sum(d.due))}` } : null,
-        note: d.due.length ? unique(d.due.map(name)).join(', ') : 'Nothing due' };
-    }
-  } else if (view === 'spend') {
-    const m = ins.months[month];
-    const p = ins.avgMonth ? (((m.current ? ins.forecast : m.total) - ins.avgMonth) / ins.avgMonth) * 100 : 0;
-    hero = m.current
-      ? { label: `${monthName(m.month)} so far`, value: m.total, pill: { tone: dirClass(p), text: pct(p) }, note: `heading for ${kfmt(ins.forecast)}` }
-      : { label: `Spent in ${monthName(m.month)}`, value: m.total, pill: { tone: dirClass(p), text: pct(p) }, note: 'vs your average' };
-  } else if (view === 'mix') {
-    const top = ins.ranked[0];
-    hero = { label: 'Spent · last 90 days', value: ins.total90, note: top && top.spend > 0 ? `${top.name} takes ${top.share.toFixed(0)}%` : '' };
-  } else {
-    const p = Math.round((sh.ratio - 1) * 100);
-    hero = { label: 'Bill shock', value: sh.score, isScore: true, pill: { tone: p > 0 ? 'up' : 'down', text: `${p > 0 ? '+' : ''}${p}%` }, note: 'vs a normal month' };
-  }
-  const shown = useCountUp(hero.value);
-
   const coming = ins.open.filter((b) => b.due >= 0).slice(0, 6);
-  const top = ins.ranked.filter((s) => s.spend > 0).slice(0, 5);
+  const top = ins.ranked.filter((s) => s.spend > 0).slice(0, 4);
+  const overdueCount = ins.open.filter((b) => b.due < 0).length;
+  const now = new Date();
 
   return (
-    <div style={{ position: 'relative' }}>
-      <div className="glow" />
+    <div>
       <div className="topbar">
-        <div className="brand"><span className="brand-mark"><Icon name="dog" size={17} stroke={2.2} /></span>Watchdog</div>
-        <button className="icon-btn" aria-label="Account" onClick={() => go.account()} style={{ fontSize: 14, fontWeight: 700 }}>{data.business.initials}</button>
+        <div className="brand">
+          <span className="brand-mark"><Icon name="eye" size={20} stroke={2.2} /></span>
+          <span>
+            <span style={{ display: 'block', fontFamily: 'var(--display)', fontSize: 22, fontWeight: 800, lineHeight: 1 }}>Watchdog</span>
+            <span className="muted" style={{ display: 'block', fontSize: 13, fontWeight: 500, marginTop: 3 }}>{greeting(now)}, {data.business.owner.split(' ')[0]} · {todayLabel(now)}</span>
+          </span>
+        </div>
+        <button className="icon-btn" aria-label="Account" onClick={() => go.account()} style={{ fontSize: 14, fontWeight: 700, background: 'var(--card)', border: '1px solid var(--line)' }}>{data.business.initials}</button>
       </div>
 
-      {incoming && (
-        <div className="incoming">
-          <span className="ping" />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="muted" style={{ fontSize: 13, fontWeight: 600 }}>New bill landed</div>
-            <div style={{ fontSize: 16, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name(incoming)} <span className="num">{money(incoming.total)}</span></div>
-          </div>
-          <button className="btn btn-primary" style={{ height: 42, fontSize: 15, borderRadius: 12 }} onClick={() => go.confirm(incoming)}>Confirm</button>
-        </div>
-      )}
+      {ins.empty ? <Welcome go={go} /> : (
+        <div className="page" style={{ paddingTop: 10, gap: 16 }}>
+          {incoming && (
+            <div className="incoming" style={{ margin: 0 }}>
+              <span className="ping" />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="muted" style={{ fontSize: 13, fontWeight: 600 }}>New bill landed</div>
+                <div style={{ fontSize: 16, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name(incoming)} <span className="num">{money(incoming.total)}</span></div>
+              </div>
+              <button className="btn btn-primary" style={{ height: 42, fontSize: 15, borderRadius: 12 }} onClick={() => go.confirm(incoming)}>Confirm</button>
+            </div>
+          )}
 
-      {ins.empty ? <Welcome go={go} /> : <>
-      <div style={{ padding: '6px 16px 0', position: 'relative' }}>
-        <div className="seg" role="tablist" aria-label="Chart">
-          {VIEWS.map(([k, label]) => (
-            <button key={k} role="tab" aria-selected={view === k} onClick={() => { setView(k); setScrub(null); setMonth(ins.months.length - 1); }}>{label}</button>
-          ))}
-        </div>
-      </div>
-
-      <div className="hero" aria-live="polite">
-        <div className="hero-label">{hero.label}</div>
-        <div className="hero-value num" style={hero.isScore ? { color: shockTone(sh.score) === 'text' ? 'var(--text)' : `var(--${shockTone(sh.score)})` } : null}>
-          {hero.isScore ? `${Math.round(shown)}` : money(shown)}{hero.isScore && <span style={{ fontSize: 24, color: 'var(--muted)' }}> /100</span>}
-        </div>
-        <div className="hero-change">
-          {hero.pill && <span className={`pill num ${hero.pill.tone}`}>{hero.pill.text}</span>}
-          <span className="muted">{hero.note}</span>
-        </div>
-      </div>
-
-      {view === 'owed' && (
-        <>
-          <StepChart past={pastValues} ahead={ins.ahead.map((d) => d.owed)} scrub={scrub} onScrub={setScrub} />
-          <div className="periods">
-            {Object.keys(PERIODS).map((p) => <button key={p} className="period" aria-pressed={period === p} onClick={() => setPeriod(p)}>{p}</button>)}
-          </div>
-        </>
-      )}
-      {view === 'spend' && <MonthBars selected={month} onSelect={setMonth} ghost={ins.forecast} rows={ins.months.map((m) => ({ label: monthName(m.month), value: m.total, current: m.current }))} />}
-      {view === 'mix' && <Donut rows={ins.ranked.filter((s) => s.spend > 0).map((s) => ({ name: s.name, share: s.share }))} />}
-      {view === 'shock' && <Gauge score={sh.score} label={sh.label} tone={shockTone(sh.score)} caption={`Normal month ${kfmt(sh.normal)} · next 30 days ${kfmt(sh.next30)}`} />}
-
-      <div className="page" style={{ paddingTop: 28 }}>
-        <div className="tiles">
-          <button className="tile" onClick={() => setView('shock')}>
-            <span className="tile-k">Bill shock</span>
-            <span className={`tile-v num ${shockTone(sh.score) === 'text' ? '' : shockTone(sh.score)}`}>{sh.score}</span>
-            <span className={`tile-sub ${shockTone(sh.score) === 'text' ? 'muted' : shockTone(sh.score)}`}>{sh.label}</span>
-          </button>
-          <button className="tile" onClick={() => go.tab('bills')}>
-            <span className="tile-k">Overdue</span>
-            <span className={`tile-v num ${ins.overdue > 0 ? 'up' : ''}`}>{money0(ins.overdue)}</span>
-            <span className="tile-sub muted">{ins.overdue > 0 ? `${ins.open.filter((b) => b.due < 0).length} bill${ins.open.filter((b) => b.due < 0).length === 1 ? '' : 's'}` : 'All clear'}</span>
-          </button>
-          <button className="tile" onClick={() => go.tab('bills')}>
-            <span className="tile-k">Next 7 days</span>
-            <span className="tile-v num">{money0(ins.next7)}</span>
-            <span className="tile-sub muted">{ins.open.filter((b) => b.due <= 6).length} to pay</span>
-          </button>
-          <button className="tile" onClick={() => setView('spend')}>
-            <span className="tile-k">This month</span>
-            <span className="tile-v num">{kfmt(ins.forecast)}</span>
-            <span className={`tile-sub ${dirClass(ins.forecast - ins.avgMonth)}`}>{ins.avgMonth ? pct(((ins.forecast - ins.avgMonth) / ins.avgMonth) * 100) : '—'} forecast</span>
-          </button>
-        </div>
-
-        {coming.length > 0 && (
-          <section>
-            <div className="section-head"><h2 className="h2">Coming up</h2><button className="link" onClick={() => go.tab('bills')}>All bills</button></div>
-            <div className="coming">
-              {coming.map((b) => {
-                const d = dateParts(b.due);
-                return (
-                  <button key={b.id} className="coming-card" onClick={() => go.bill(b.id)}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div className="date-tile" style={{ width: 42, height: 46 }}><b className="num" style={{ fontSize: 17 }}>{d.day}</b><span>{d.mon}</span></div>
-                      <div style={{ fontWeight: 700, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name(b)}</div>
-                    </div>
-                    <div>
-                      <div className="coming-amt num">{money0(b.total)}</div>
-                      <div className="muted" style={{ fontSize: 13, fontWeight: 600 }}>{whenDue(b.due)}</div>
-                    </div>
-                  </button>
-                );
-              })}
+          <section className="hero-card" aria-label="What you owe">
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ minWidth: 0 }}>
+                <div className="k">You owe suppliers</div>
+                <div className="v num">{money(owed)}</div>
+              </div>
+              <button onClick={() => go.tab('bills')} style={{ textAlign: 'right', color: 'inherit', paddingTop: 4 }} aria-label={`Bill shock ${sh.score}, ${sh.label}`}>
+                <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.06em', color: 'var(--hero-muted)' }}>BILL SHOCK</div>
+                <div className="num" style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.1, color: sh.score >= 60 ? 'var(--hero-warn)' : 'var(--hero-text)' }}>{sh.score}</div>
+                <div className={`shock-segs ${sh.score >= 60 ? 'hot' : ''}`}>{[0, 1, 2, 3, 4].map((i) => <i key={i} className={i < Math.ceil(sh.score / 20) ? 'on' : ''} />)}</div>
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <span className="hero-chip num">{kfmt(ins.next7)} due this week</span>
+              {ins.overdue > 0 && <span className="hero-chip warn num">{kfmt(ins.overdue)} overdue</span>}
+              <span className="hero-chip">{sh.label} month ahead</span>
             </div>
           </section>
-        )}
 
-        <section>
-          <div className="section-head"><h2 className="h2">Your suppliers</h2><button className="link" onClick={() => go.tab('suppliers')}>See all</button></div>
-          <div className="card" style={{ padding: '4px 16px' }}>
-            {top.map((s) => <HoldingRow key={s.id} s={s} onOpen={go.supplier} />)}
-            {top.length === 0 && <p className="muted" style={{ padding: '18px 0' }}>No supplier bills in the last 90 days.</p>}
+          <section className="card" aria-label="Spending">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+              <h2 className="h2">Spending</h2>
+              {buckets.streak >= 2
+                ? <span className="tag down"><Icon name="flame" size={14} stroke={2.4} style={{ marginRight: 5 }} />{buckets.streak} {buckets.unit}s under avg</span>
+                : <span className="tag up"><Icon name="flame" size={14} stroke={2.4} style={{ marginRight: 5 }} />Last {buckets.unit} over avg</span>}
+            </div>
+            <div className="seg" role="tablist" aria-label="Range" style={{ marginTop: 14 }}>
+              {RANGES.map((r) => <button key={r} role="tab" aria-selected={range === r} onClick={() => setRange(r)}>{r}</button>)}
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <DotChart key={range} data={buckets} describe={bucketDescriber(buckets.unit, nameOf)} />
+            </div>
+          </section>
+
+          {caught.length > 0 && (
+            <section className="card" aria-label="Watchdog caught">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+                <h2 className="h2">Watchdog caught</h2>
+                <span className="num down" style={{ fontSize: 24, fontWeight: 800 }}>{money0(caught.reduce((t, c) => t + c.amount, 0))}</span>
+              </div>
+              <p className="muted" style={{ fontSize: 13 }}>on your own bills, this quarter</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+                {caught.slice(0, 3).map((c) => <CatchRow key={c.id} c={c} nameOf={nameOf} onDispute={() => go.dispute(c)} />)}
+              </div>
+            </section>
+          )}
+
+          {coming.length > 0 && (
+            <section>
+              <div className="section-head"><h2 className="h2">Coming up</h2><button className="link" onClick={() => go.tab('bills')}>All bills</button></div>
+              <div className="coming">
+                {coming.map((b) => {
+                  const d = dateParts(b.due);
+                  return (
+                    <button key={b.id} className="coming-card" onClick={() => go.bill(b.id)}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div className="date-tile" style={{ width: 42, height: 46 }}><b className="num" style={{ fontSize: 17 }}>{d.day}</b><span>{d.mon}</span></div>
+                        <div style={{ fontWeight: 700, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name(b)}</div>
+                      </div>
+                      <div>
+                        <div className="coming-amt num">{money0(b.total)}</div>
+                        <div className="muted" style={{ fontSize: 13, fontWeight: 600 }}>{whenDue(b.due)}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <div className="section-head"><h2 className="h2">Your suppliers</h2><button className="link" onClick={() => go.tab('suppliers')}>See all</button></div>
+            <div className="card" style={{ padding: '4px 16px' }}>
+              {top.map((s, i) => <HoldingRow key={s.id} s={s} index={i} onOpen={go.supplier} />)}
+              {top.length === 0 && <p className="muted" style={{ padding: '18px 0' }}>No supplier bills in the last 90 days.</p>}
+            </div>
+          </section>
+
+          <div className="tiles">
+            <button className="tile card-tap" onClick={() => go.tryPurchase()}>
+              <span className="action-icon" style={{ width: 42, height: 42, background: 'var(--card-2)' }}><Icon name="calc" size={20} /></span>
+              <span><span style={{ display: 'block', fontWeight: 800, fontSize: 17 }}>Try a buy</span><span className="muted" style={{ fontSize: 13 }}>See it before you sign</span></span>
+            </button>
+            <button className="tile card-tap" onClick={() => go.counter()}>
+              <span className="action-icon" style={{ width: 42, height: 42, background: 'var(--card-2)' }}><Icon name="handshake" size={20} /></span>
+              <span><span style={{ display: 'block', fontWeight: 800, fontSize: 17 }}>Counter mode</span><span className="muted" style={{ fontSize: 13 }}>Bargain on the spot</span></span>
+            </button>
           </div>
-        </section>
+        </div>
+      )}
+    </div>
+  );
+}
 
-        <div className="tiles">
-          <button className="tile card-tap" onClick={() => go.tryPurchase()}>
-            <span className="action-icon" style={{ width: 40, height: 40 }}><Icon name="calc" size={20} /></span>
-            <span><span style={{ display: 'block', fontWeight: 800, fontSize: 17 }}>Try a buy</span><span className="muted" style={{ fontSize: 13 }}>See it before you sign</span></span>
-          </button>
-          <button className="tile card-tap" onClick={() => go.counter()}>
-            <span className="action-icon" style={{ width: 40, height: 40 }}><Icon name="handshake" size={20} /></span>
-            <span><span style={{ display: 'block', fontWeight: 800, fontSize: 17 }}>Counter mode</span><span className="muted" style={{ fontSize: 13 }}>Bargain on the spot</span></span>
-          </button>
+export function CatchRow({ c, nameOf, onDispute }) {
+  const price = c.kind === 'price';
+  return (
+    <div className="catch">
+      <span className="catch-icon" style={{ background: price ? 'var(--up-soft)' : 'var(--due-soft)', color: price ? 'var(--up)' : 'var(--due)' }}>
+        <Icon name={price ? 'tag' : 'copy'} size={20} stroke={2.2} />
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 700, fontSize: 15 }}>
+          {price ? `${nameOf(c.supplierId)}: ${c.item.name.split(' · ')[0]}` : `${nameOf(c.supplierId)} billed twice?`}
+        </div>
+        <div className="muted num" style={{ fontSize: 13 }}>
+          {price
+            ? `${money(c.mine)} vs ${money(c.best)} at ${nameOf(c.bestId)} · ${money0(c.amount)}/qtr`
+            : `${c.b.ref || 'Bill'} matches ${c.a.ref || 'an earlier bill'} · ${money0(c.amount)}`}
         </div>
       </div>
-      </>}
+      <button className="btn btn-primary" style={{ height: 40, fontSize: 14, padding: '0 12px', borderRadius: 10 }} onClick={onDispute}>Dispute</button>
     </div>
   );
 }
@@ -189,13 +175,13 @@ function Welcome({ go }) {
   return (
     <div className="page" style={{ paddingTop: 20 }}>
       <div>
-        <h1 className="title" style={{ fontSize: 34 }}>Treat your suppliers like a portfolio.</h1>
+        <h1 className="title" style={{ fontSize: 36, lineHeight: 1.05 }}>Treat your suppliers like a portfolio.</h1>
         <p className="muted" style={{ fontSize: 17, marginTop: 10 }}>See every bill coming before it hits, who's taking your money, and when to bargain.</p>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {steps.map(([icon, title, sub, fn]) => (
-          <button key={title} className="action" style={{ background: 'var(--card)' }} onClick={fn}>
-            <span className="action-icon"><Icon name={icon} size={22} /></span>
+          <button key={title} className="action card" style={{ background: 'var(--card)' }} onClick={fn}>
+            <span className="action-icon" style={{ background: 'var(--card-2)' }}><Icon name={icon} size={22} /></span>
             <span style={{ flex: 1 }}><span className="action-title" style={{ display: 'block' }}>{title}</span><span className="action-sub">{sub}</span></span>
             <Icon name="chevron" size={20} style={{ color: 'var(--muted)' }} />
           </button>
@@ -205,6 +191,3 @@ function Welcome({ go }) {
     </div>
   );
 }
-
-const sum = (l) => l.reduce((t, b) => t + b.total, 0);
-const unique = (l) => [...new Set(l)];

@@ -333,7 +333,7 @@ export function ItemSheet({ data, itemId, onClose, onAlert }) {
 // ---------------------------------------------------------------------------
 // Account
 // ---------------------------------------------------------------------------
-export function AccountSheet({ data, onClose, onUseSample }) {
+export function AccountSheet({ data, onClose, onUseSample, theme, onTheme }) {
   const toast = useToast();
   const [confirm, setConfirm] = useState(false);
   const copy = async () => {
@@ -347,6 +347,13 @@ export function AccountSheet({ data, onClose, onUseSample }) {
         <span className="tag warn" style={{ marginTop: 10 }}>Coming soon</span>
       </div>
       <button className="btn btn-secondary btn-block" onClick={copy}><Icon name="copy" size={18} />Copy address</button>
+      <div className="field">
+        <span className="label">Look</span>
+        <div className="seg" role="tablist" aria-label="Look">
+          {[['light', 'Light'], ['dark', 'Dark'], ['auto', 'Match phone']].map(([k, l]) => <button key={k} role="tab" aria-selected={theme === k} onClick={() => onTheme(k)}>{l}</button>)}
+        </div>
+        <span className="muted" style={{ fontSize: 13 }}>Light reads best in full sun.</span>
+      </div>
       <div className="card" style={{ background: 'var(--bg)' }}>
         <div style={{ fontWeight: 800, fontSize: 17 }}>{data.useSample ? 'Showing sample data' : 'Your own data'}</div>
         <p className="muted" style={{ marginTop: 6 }}>{data.useSample ? 'Have a play. When you\'re ready, start fresh and add your real bills.' : 'Everything you add stays on this phone for now.'}</p>
@@ -364,3 +371,33 @@ export function AccountSheet({ data, onClose, onUseSample }) {
   );
 }
 
+
+// ---------------------------------------------------------------------------
+// Dispute something Watchdog caught: a ready-to-send message to the rep
+// ---------------------------------------------------------------------------
+export function DisputeSheet({ data, c, onClose, onSent }) {
+  const toast = useToast();
+  const sup = data.suppliers.find((s) => s.id === c.supplierId);
+  const nameOf = (id) => data.suppliers.find((s) => s.id === id)?.name || id;
+  const hi = sup?.rep && sup.rep !== 'Trade desk' ? `Hi ${sup.rep.split(' ')[0]},` : 'Hi,';
+  const body = c.kind === 'price'
+    ? `${hi}\n\nOn my account ${sup?.account || ''} I'm being charged ${money(c.mine)} for ${c.item.name}. I've been billed ${money(c.best)} for the same item elsewhere. Can you match ${money(c.best)} and credit the difference on recent invoices?\n\nThanks,\n${data.business.owner}\n${data.business.name}`
+    : `${hi}\n\nInvoice ${c.b.ref || ''} for ${money(c.b.total)} looks like a duplicate of ${c.a.ref || 'an earlier invoice'} (same amount, a few days apart). Can you check and cancel one of them?\n\nThanks,\n${data.business.owner}\n${data.business.name}`;
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(body); toast('Message copied — paste it into an email or text'); }
+    catch { toast('Press and hold the message to copy it'); }
+  };
+  return (
+    <Sheet title={c.kind === 'price' ? 'Ask for your price' : 'Query a double bill'} onClose={onClose}>
+      <div className="card" style={{ background: 'var(--card-2)', boxShadow: 'none' }}>
+        <div className="label">To</div>
+        <div style={{ fontWeight: 700, marginTop: 4 }}>{sup?.rep || nameOf(c.supplierId)}{sup?.phone ? ` · ${sup.phone}` : ''}</div>
+      </div>
+      <div className="card" style={{ background: 'var(--card-2)', boxShadow: 'none', whiteSpace: 'pre-wrap', fontSize: 16, lineHeight: 1.5, userSelect: 'text' }}>{body}</div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button className="btn btn-secondary" style={{ flex: 1 }} onClick={copy}><Icon name="copy" size={18} />Copy</button>
+        <button className="btn btn-primary" style={{ flex: 1.3 }} onClick={onSent}><Icon name="check" size={18} />I've sent it</button>
+      </div>
+    </Sheet>
+  );
+}
