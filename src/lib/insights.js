@@ -1,37 +1,47 @@
 import { useMemo } from 'react';
 import {
-  aheadSeries, billShock, monthForecast, monthlySpend, openBills, owedSeries, supplierStats, totalOwed,
+  aheadSeries, billShock, monthForecast, monthlySpend, openBills, owedSeries, rollingSpend, supplierPosition,
+  supplierStats, totalOwed,
 } from './model.js';
 
 /** Everything the screens show, derived once per data change. */
 export function useInsights(data) {
-  return useMemo(() => {
-    const { bills, suppliers } = data;
-    const history = owedSeries(bills, -365);
-    const ahead = aheadSeries(bills, 35);
-    const open = openBills(bills);
-    const ranked = supplierStats(bills, suppliers);
-    const months = monthlySpend(bills, 6);
-    const prev = months.slice(0, -1);
-    const avgMonth = prev.reduce((t, m) => t + m.total, 0) / (prev.length || 1);
-    const byChange = [...ranked].sort((a, b) => b.change - a.change);
-    return {
-      owed: totalOwed(bills),
-      history,
-      ahead,
-      open,
-      shock: billShock(bills),
-      ranked,
-      total90: ranked.reduce((t, s) => t + s.spend, 0),
-      months,
-      avgMonth,
-      forecast: monthForecast(bills),
-      overdue: open.filter((b) => b.due < 0).reduce((t, b) => t + b.total, 0),
-      next7: open.filter((b) => b.due <= 6).reduce((t, b) => t + b.total, 0),
-      riser: byChange[0],
-      faller: byChange[byChange.length - 1],
-    };
-  }, [data]);
+  return useMemo(() => insights(data), [data]);
 }
 
-export const shockTone = (score) => (score < 40 ? 'down' : score < 60 ? 'text-2' : 'up');
+export function insights({ bills, suppliers }) {
+  const history = owedSeries(bills, -365);
+  const open = openBills(bills);
+  const ranked = supplierStats(bills, suppliers).map((s) => ({
+    ...s,
+    spark: rollingSpend(bills, s.id, 90),
+    ...supplierPosition(bills, s.id),
+  }));
+  const months = monthlySpend(bills, 6);
+  const prev = months.slice(0, -1);
+  const avgMonth = prev.reduce((t, m) => t + m.total, 0) / (prev.length || 1);
+  const active = ranked.filter((s) => s.spend > 0);
+  const byChange = [...active].sort((a, b) => b.change - a.change);
+  const shock = billShock(bills);
+  return {
+    empty: bills.length === 0,
+    owed: totalOwed(bills),
+    history,
+    ahead: aheadSeries(bills, 35),
+    open,
+    shock,
+    // The whole app leans warm when bills are piling up, cool when they're not.
+    mood: shock.score >= 60 ? 'hot' : 'cool',
+    ranked,
+    total90: ranked.reduce((t, s) => t + s.spend, 0),
+    months,
+    avgMonth,
+    forecast: monthForecast(bills),
+    overdue: open.filter((b) => b.due < 0).reduce((t, b) => t + b.total, 0),
+    next7: open.filter((b) => b.due <= 6).reduce((t, b) => t + b.total, 0),
+    riser: byChange[0] || null,
+    faller: byChange.length > 1 ? byChange[byChange.length - 1] : null,
+  };
+}
+
+export const shockTone = (score) => (score < 40 ? 'down' : score < 60 ? 'text' : 'up');

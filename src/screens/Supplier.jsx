@@ -1,82 +1,162 @@
-import { FullScreen } from '../components/UI.jsx';
-import { dirClass, money, money0, monthName, pct } from '../lib/format.js';
-import { itemChange, overpay } from '../lib/model.js';
-import { describeDeal, dealLine } from './League.jsx';
+import { useState } from 'react';
+import { AreaSteps, PriceSteps } from '../components/Charts.jsx';
+import Icon from '../components/Icon.jsx';
+import { BillRow } from '../components/Rows.jsx';
+import { FullScreen, useToast } from '../components/UI.jsx';
+import { dayLabel, dirClass, money, money0, pct, whenDue } from '../lib/format.js';
+import { itemChange, overpay, rollingSpend } from '../lib/model.js';
+import { describeDeal, dealLine } from './Deals.jsx';
 
-export default function Supplier({ data, ins, supplierId, onClose, onOpenItem, onDeal }) {
+const RANGES = { '3M': 90, '6M': 180, '1Y': 365 };
+
+export default function Supplier({ data, ins, supplierId, go, onClose }) {
+  const toast = useToast();
+  const [range, setRange] = useState('3M');
+  const [scrub, setScrub] = useState(null);
   const s = ins.ranked.find((x) => x.id === supplierId);
-  const max = Math.max(...s.months) || 1;
-  const now = new Date().getMonth();
+  if (!s) return null;
+  const tone = dirClass(s.change);
+  const series = rollingSpend(data.bills, s.id, RANGES[range]);
+  const shownValue = scrub == null ? s.spend : series[scrub];
+  const label = scrub == null ? 'Last 90 days' : `30 days to ${dayLabel(scrub - (series.length - 1))}`;
   const over = overpay(data.items, s.id);
-  const name = (id) => data.suppliers.find((x) => x.id === id)?.name ?? id;
   const deals = data.deals.filter((d) => d.supplierId === s.id);
-  const movers = data.items.filter((it) => it.latest[s.id] != null);
+  const items = data.items.filter((it) => it.latest[s.id] != null);
+  const recent = data.bills.filter((b) => b.supplierId === s.id && b.paid != null && b.paid > -60).sort((a, b) => b.issued - a.issued).slice(0, 5);
+  const copy = async (text) => {
+    try { await navigator.clipboard.writeText(text); toast('Copied'); } catch { toast('Press and hold to copy'); }
+  };
 
   return (
-    <FullScreen label={s.name} onClose={onClose} closeIcon="back" right={<span className="num muted" style={{ fontSize: 12 }}>#{s.rank} of {ins.ranked.length}</span>}>
-      <div className="page" style={{ paddingTop: 8 }}>
-        <div>
-          <div className="muted" style={{ fontSize: 15 }}>{s.name}</div>
-          <div className="num" style={{ fontSize: 40, fontWeight: 600, letterSpacing: '-0.02em' }}>{money0(s.spend)}</div>
-          <div className={`num ${dirClass(s.change)}`}>{pct(s.change)} vs the 90 days before</div>
+    <FullScreen label={s.name} onClose={onClose} right={
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="icon-btn" aria-label={`Edit ${s.name}`} onClick={() => go.editSupplier(s.id)}><Icon name="edit" size={18} /></button>
+      </div>
+    }>
+      <div style={{ padding: '4px 16px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h1 className="title">{s.name}</h1>
+          {s.rank <= 3 && s.spend > 0 && <span className="tag" style={{ color: ['var(--gold)', 'var(--silver)', 'var(--bronze)'][s.rank - 1] }}>#{s.rank}</span>}
         </div>
+        <div className="hero-label" style={{ marginTop: 8 }}>{label}</div>
+        <div className="hero-value num">{money0(shownValue)}</div>
+        <div className="hero-change">
+          {scrub == null && s.spend > 0 && <span className={`pill num ${tone}`}>{pct(s.change)}</span>}
+          <span className="muted">{scrub == null ? 'vs the 90 days before' : 'spent with them'}</span>
+        </div>
+      </div>
+      <AreaSteps values={series} tone={tone} scrub={scrub} onScrub={setScrub} />
+      <div className="periods">
+        {Object.keys(RANGES).map((r) => <button key={r} className="period" aria-pressed={range === r} onClick={() => setRange(r)}>{r}</button>)}
+      </div>
 
-        <div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 110 }} role="img" aria-label={`${s.name} spend by calendar month`}>
-            {s.months.map((v, i) => (
-              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: '100%', height: Math.max(2, (v / max) * 90), borderRadius: 4, background: i === s.months.length - 1 ? 'var(--text)' : 'var(--line-2)' }} />
-                <span className="faint" style={{ fontSize: 10 }}>{monthName(now - (s.months.length - 1 - i))}</span>
-              </div>
-            ))}
+      <div className="page" style={{ paddingTop: 24 }}>
+        <div className="tiles">
+          <div className="tile">
+            <span className="tile-k">You owe them</span>
+            <span className={`tile-v num ${s.owed > 0 ? '' : 'muted'}`}>{money0(s.owed)}</span>
+            <span className={`tile-sub ${s.next && s.next.due < 0 ? 'up' : 'muted'}`}>{s.next ? whenDue(s.next.due) : 'Nothing owing'}</span>
+          </div>
+          <div className="tile">
+            <span className="tile-k">Share of spend</span>
+            <span className="tile-v num">{s.share.toFixed(0)}%</span>
+            <span className="tile-sub muted">{s.billCount} bills · avg {money0(s.avgBill)}</span>
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, borderTop: '1px solid var(--line)', paddingTop: 16 }}>
-          {[['Share of spend', `${s.share.toFixed(0)}%`], ['Bills · 90 days', String(s.billCount)], ['Average bill', money0(s.avgBill)], ['Terms', s.terms]].map(([k, v]) => (
-            <div key={k}><div className="stat-k">{k}</div><div className="num" style={{ fontSize: 16, fontWeight: 600 }}>{v}</div></div>
-          ))}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => go.addBill(s.id)}><Icon name="plus" size={18} />Add bill</button>
+          <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => go.counter(s.id)}><Icon name="handshake" size={18} />Make a deal</button>
         </div>
 
-        {over.total > 0 && (
-          <div style={{ borderTop: '1px solid var(--line)', paddingTop: 16 }}>
-            <div style={{ fontSize: 15, fontWeight: 600 }}>About <span className="num up">{money0(over.total)}</span> a quarter over your best price</div>
-            <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-              {over.lines.map((l) => `${l.item.name.split(' · ')[0]} — ${name(l.bestId)} ${money(l.best)}`).join(' · ')}
-            </div>
-          </div>
-        )}
-
-        {movers.length > 0 && (
-          <section style={{ borderTop: '1px solid var(--line)', paddingTop: 16 }}>
-            <h2 className="section-title">Prices on your invoices</h2>
-            {movers.map((it) => (
-              <button key={it.id} className="row" style={{ minHeight: 52 }} onClick={() => onOpenItem(it.id)}>
-                <div className="row-main">
-                  <div className="row-title">{it.name}</div>
-                  <div className="num row-sub">{money(it.latest[s.id])} {it.unit}</div>
-                </div>
-                <span className={`num ${dirClass(itemChange(it))}`} style={{ fontSize: 13 }}>{pct(itemChange(it))}</span>
-              </button>
-            ))}
+        {(s.rep || s.phone || s.account || s.terms) && (
+          <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {s.rep && <Line k="Rep" v={s.rep} />}
+            {s.branch && <Line k="Branch" v={s.branch} />}
+            {s.terms && <Line k="Terms" v={s.terms} />}
+            {s.account && <Line k="Account no." v={s.account} action={<button className="icon-btn" aria-label="Copy account number" onClick={() => copy(s.account)}><Icon name="copy" size={17} /></button>} />}
+            {s.phone && <a className="btn btn-secondary btn-block" href={`tel:${s.phone.replace(/\s/g, '')}`}><Icon name="phone" size={18} />Call {s.rep && s.rep !== 'Trade desk' ? s.rep.split(' ')[0] : s.name}</a>}
           </section>
         )}
 
-        <section style={{ borderTop: '1px solid var(--line)', paddingTop: 16 }}>
-          <h2 className="section-title">Deals</h2>
-          {deals.length === 0 && <p className="muted" style={{ fontSize: 13 }}>No deals yet.</p>}
-          {deals.map((d) => {
-            const p = dealLine(d, data.bills);
-            return (
-              <div key={d.id} className="row" style={{ minHeight: 52 }}>
-                <div className="row-main"><div>{describeDeal(d, data.suppliers)}</div><div className="num row-sub">{p.now} · {p.target}</div></div>
-                <span style={{ fontSize: 12, color: 'var(--accent)' }}>Active</span>
-              </div>
-            );
-          })}
-          <button className="btn btn-ghost btn-block" style={{ marginTop: 12 }} onClick={() => onDeal(s.id)}>Make a deal with {s.name}</button>
-        </section>
+        {over.total > 0 && (
+          <section className="card" style={{ background: 'var(--up-soft)' }}>
+            <div className="tile-k" style={{ color: 'var(--up)' }}>Paying over your best price</div>
+            <div className="num up" style={{ fontSize: 28, fontWeight: 800, marginTop: 4 }}>{money0(over.total)}<span style={{ fontSize: 15, fontWeight: 600 }}> a quarter</span></div>
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {over.lines.map((l) => (
+                <div key={l.item.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 15 }}>
+                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.item.name.split(' · ')[0]}</span>
+                  <span className="num" style={{ flex: 'none' }}>{data.suppliers.find((x) => x.id === l.bestId)?.name} {money(l.best)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {s.open.length > 0 && (
+          <section>
+            <h2 className="h2" style={{ marginBottom: 6 }}>To pay</h2>
+            <div className="card" style={{ padding: '2px 16px' }}>
+              {s.open.map((b) => <BillRow key={b.id} bill={b} suppliers={data.suppliers} onOpen={go.bill} />)}
+            </div>
+          </section>
+        )}
+
+        {recent.length > 0 && (
+          <section>
+            <h2 className="h2" style={{ marginBottom: 6 }}>Recently paid</h2>
+            <div className="card" style={{ padding: '2px 16px' }}>
+              {recent.map((b) => <BillRow key={b.id} bill={b} suppliers={data.suppliers} onOpen={go.bill} showPaid />)}
+            </div>
+          </section>
+        )}
+
+        {items.length > 0 && (
+          <section>
+            <h2 className="h2" style={{ marginBottom: 6 }}>Their prices</h2>
+            <div className="card" style={{ padding: '4px 16px' }}>
+              {items.map((it) => {
+                const ch = itemChange(it);
+                return (
+                  <button key={it.id} className="holding" onClick={() => go.item(it.id)}>
+                    <div style={{ minWidth: 0 }}><div className="holding-name" style={{ fontSize: 16 }}>{it.name.split(' · ')[0]}</div><div className="holding-sub">{it.unit}</div></div>
+                    <PriceSteps values={it.history} tone={dirClass(ch)} width={76} height={34} />
+                    <div className="holding-right"><span className="holding-amt num">{money(it.latest[s.id])}</span><span className={`pill num ${dirClass(ch)}`}>{pct(ch)}</span></div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {deals.length > 0 && (
+          <section>
+            <h2 className="h2" style={{ marginBottom: 10 }}>Deals</h2>
+            {deals.map((d) => {
+              const p = dealLine(d, data.bills);
+              return (
+                <div key={d.id} className="card" style={{ marginBottom: 10 }}>
+                  <div style={{ fontWeight: 700 }}>{describeDeal(d, data.suppliers)}</div>
+                  <div className="bar-track" style={{ marginTop: 12 }}><div className="bar-fill" style={{ width: `${p.pct}%` }} /></div>
+                  <div className="num muted" style={{ marginTop: 8, fontSize: 14 }}>{p.now} · {p.target}</div>
+                </div>
+              );
+            })}
+          </section>
+        )}
       </div>
     </FullScreen>
+  );
+}
+
+function Line({ k, v, action }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+      <span className="muted" style={{ fontSize: 15 }}>{k}</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 16, minWidth: 0 }}>
+        <span className="num" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</span>{action}
+      </span>
+    </div>
   );
 }

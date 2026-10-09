@@ -156,3 +156,61 @@ export function dayOffset(date, today = new Date()) {
 const sum = (list) => list.reduce((t, b) => t + b.total, 0);
 const round2 = (n) => Math.round(n * 100) / 100;
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+
+// ---------------------------------------------------------------------------
+// Payment terms → due date. Offsets are days from today.
+//   COD / Card      paid on the day
+//   7 / 14 / 30 days  that many days after the bill date
+//   EOM             end of the month the bill is dated in
+//   30 days EOM     end of the following month (how most wholesalers bill)
+// ---------------------------------------------------------------------------
+export const TERMS = ['COD', '7 days', '14 days', '30 days', 'EOM', '30 days EOM'];
+
+export function dueFromTerms(issued, terms, today = new Date()) {
+  const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() + issued);
+  switch (terms) {
+    case 'COD': case 'Card': return issued;
+    case '7 days': return issued + 7;
+    case '14 days': return issued + 14;
+    case '30 days': return issued + 30;
+    case 'EOM': return dayOffset(new Date(date.getFullYear(), date.getMonth() + 1, 0), today);
+    case '30 days EOM': return dayOffset(new Date(date.getFullYear(), date.getMonth() + 2, 0), today);
+    default: return issued + 30;
+  }
+}
+export const isCashTerms = (terms) => terms === 'COD' || terms === 'Card';
+
+/**
+ * Spend in the 30 days up to each day — a supplier's "price" line. It only
+ * moves when one of their bills is dated (or drops out of the window), so it
+ * is drawn as steps. Returns `days + 1` values ending today.
+ */
+export function rollingSpend(bills, supplierId, days = 90, window = 30) {
+  const mine = supplierId ? bills.filter((b) => b.supplierId === supplierId) : bills.filter((b) => b.supplierId);
+  const daily = new Map();
+  for (const b of mine) daily.set(b.issued, (daily.get(b.issued) || 0) + b.total);
+  const first = -days - window + 1;
+  const out = [];
+  let run = 0;
+  for (let d = first; d <= 0; d++) {
+    run += daily.get(d) || 0;
+    // Only take a bill back out of the window if it was counted in the first place.
+    if (d - window >= first) run -= daily.get(d - window) || 0;
+    if (d >= -days) out.push(round2(run));
+  }
+  return out;
+}
+
+/** What is owed to one supplier right now, and their next due bill. */
+export function supplierPosition(bills, supplierId) {
+  const open = openBills(bills).filter((b) => b.supplierId === supplierId);
+  return { owed: round2(sum(open)), next: open.find((b) => b.due >= 0) || open[0] || null, open };
+}
+
+/** Effect of a purchase you're about to make: where it lands and what it does to bill shock. */
+export function previewPurchase(bills, { supplierId, amount, terms }, today = new Date()) {
+  const due = dueFromTerms(0, terms, today);
+  const bill = { id: 'preview', supplierId, total: amount, issued: 0, due, paid: isCashTerms(terms) ? 0 : null };
+  const before = billShock(bills), after = billShock([...bills, bill]);
+  return { due, before, after, owedBefore: totalOwed(bills), owedAfter: totalOwed([...bills, bill]) };
+}

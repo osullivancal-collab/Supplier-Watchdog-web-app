@@ -1,26 +1,27 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Icon from './components/Icon.jsx';
-import { Sheet, ToastProvider, useToast } from './components/UI.jsx';
+import { ToastProvider, useToast } from './components/UI.jsx';
 import { money } from './lib/format.js';
 import { useInsights } from './lib/insights.js';
-import { useStore, vendorName } from './lib/store.js';
+import { deletePhoto, savePhoto, useStore, vendorName } from './lib/store.js';
 import Bills from './screens/Bills.jsx';
 import Counter from './screens/Counter.jsx';
-import League, { TenderSheet } from './screens/League.jsx';
-import Market from './screens/Market.jsx';
+import Deals, { TenderSheet } from './screens/Deals.jsx';
+import Home from './screens/Home.jsx';
+import { AccountSheet, AddMenu, BillForm, BillSheet, ItemSheet, SupplierForm, TryBuy } from './screens/Sheets.jsx';
 import Supplier from './screens/Supplier.jsx';
-import Watch, { ItemSheet } from './screens/Watch.jsx';
+import Suppliers from './screens/Suppliers.jsx';
 
-const TABS = [['market', 'Market'], ['bills', 'Bills'], ['watch', 'Watch'], ['league', 'League']];
+const TABS = [['home', 'Home'], ['bills', 'Bills'], ['add', ''], ['suppliers', 'Suppliers'], ['deals', 'Deals']];
 
 export default function App() {
   return <ToastProvider><Shell /></ToastProvider>;
 }
 
 /**
- * Overlays (supplier page, sheets, counter mode) sit on a stack that is mirrored
- * into browser history, so the phone's back button / swipe closes the top one
- * instead of leaving the app.
+ * Overlays (supplier page, sheets, counter mode) sit on a stack mirrored into
+ * browser history, so the phone's back gesture closes the top one instead of
+ * leaving the app. `replace` swaps the top overlay (e.g. + menu → bill form).
  */
 function useOverlays() {
   const [stack, setStack] = useState([]);
@@ -32,88 +33,121 @@ function useOverlays() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
   const open = useCallback((o) => { depth.current += 1; history.pushState({ overlay: depth.current }, ''); setStack((s) => [...s, o]); }, []);
+  const replace = useCallback((o) => { setStack((s) => (s.length ? [...s.slice(0, -1), o] : [o])); if (!depth.current) { depth.current = 1; history.pushState({ overlay: 1 }, ''); } }, []);
   const close = useCallback(() => { if (depth.current > 0) history.back(); }, []);
   const closeAll = useCallback(() => { if (depth.current > 0) history.go(-depth.current); }, []);
-  return { stack, open, close, closeAll };
+  return { stack, open, replace, close, closeAll };
 }
 
 function Shell() {
   const [data, dispatch] = useStore();
   const ins = useInsights(data);
   const toast = useToast();
-  const [tab, setTab] = useState('market');
+  const [tab, setTab] = useState('home');
   const scroller = useRef(null);
-  const { stack, open, close, closeAll } = useOverlays();
+  const { stack, open, replace, close, closeAll } = useOverlays();
   const name = (b) => vendorName(b, data.suppliers);
+  const top = stack.at(-1);
+  // Sheets opened from the + menu replace it rather than stacking on top.
+  const fromMenu = (o) => (top?.type === 'menu' ? replace(o) : open(o));
 
-  const goTab = (t) => { closeAll(); setTab(t); scroller.current?.scrollTo(0, 0); };
-  const confirm = (q) => {
-    dispatch({ type: 'confirm', id: q.id });
-    try { navigator.vibrate?.(10); } catch { /* not supported */ }
-    toast(`${name(q)} ${money(q.total)} added`);
+  const go = {
+    tab: (t) => { closeAll(); setTab(t); scroller.current?.scrollTo(0, 0); },
+    supplier: (id) => open({ type: 'supplier', id }),
+    bill: (id, pending) => open({ type: 'bill', id, pending }),
+    item: (id) => open({ type: 'item', id }),
+    counter: (supplierId) => fromMenu({ type: 'counter', supplierId }),
+    tender: () => open({ type: 'tender' }),
+    account: () => open({ type: 'account' }),
+    addBill: (supplierId, extra = {}) => fromMenu({ type: 'billForm', preset: { supplierId, ...extra } }),
+    editBill: (id) => replace({ type: 'billForm', id }),
+    addSupplier: () => fromMenu({ type: 'supplierForm' }),
+    editSupplier: (id) => open({ type: 'supplierForm', id }),
+    tryPurchase: () => fromMenu({ type: 'tryBuy' }),
+    confirm: (q) => {
+      dispatch({ type: 'confirm', id: q.id });
+      try { navigator.vibrate?.(10); } catch { /* not supported */ }
+      toast(`${name(q)} ${money(q.total)} added`);
+    },
   };
-  const pay = (b) => { dispatch({ type: 'pay', id: b.id }); toast(`${name(b)} ${money(b.total)} marked paid`); };
-  const openSupplier = (id) => open({ type: 'supplier', id });
-  const openItem = (id) => open({ type: 'item', id });
-  const openCounter = (supplierId) => open({ type: 'counter', supplierId });
 
-  const shared = { data, ins };
+  const newSupplier = (supplierName) => {
+    const id = `s${Date.now()}`;
+    dispatch({ type: 'saveSupplier', supplier: { id, name: supplierName, terms: '30 days EOM' }, isNew: true });
+    return id;
+  };
+
+  const saveBill = (stored, isNew, photo) => {
+    if (photo) {
+      if (!savePhoto(stored.id, photo)) { stored = { ...stored, photo: false }; toast('Bill saved — photo too big to keep on this phone'); }
+    } else deletePhoto(stored.id);
+    dispatch({ type: 'saveBill', bill: stored, isNew });
+    close();
+    if (!(photo && !stored.photo)) toast(isNew ? `${name(stored)} ${money(stored.total)} added` : 'Bill updated');
+  };
+
+  const renderOverlay = (o, i) => {
+    const key = `${o.type}-${i}`;
+    switch (o.type) {
+      case 'menu': return <AddMenu key={key} onClose={close} go={go} />;
+      case 'supplier': return <Supplier key={key} data={data} ins={ins} supplierId={o.id} go={go} onClose={close} />;
+      case 'item': return <ItemSheet key={key} data={data} itemId={o.id} onClose={close}
+        onAlert={(it, at, on) => { dispatch({ type: 'alert', itemId: it.id, at, on }); toast(on ? `Alert set at ${money(at)}` : 'Alert off'); close(); }} />;
+      case 'tender': return <TenderSheet key={key} data={data} ins={ins} onClose={close} onSend={() => { toast('Saved — sending goes live with email'); close(); }} />;
+      case 'account': return <AccountSheet key={key} data={data} onClose={close}
+        onUseSample={(on) => { dispatch({ type: 'useSample', on }); closeAll(); setTab('home'); toast(on ? 'Sample data back on' : 'Fresh start — add your first bill with +'); }} />;
+      case 'counter': return <Counter key={key} data={data} ins={ins} presetSupplier={o.supplierId} onClose={close}
+        onHide={(id) => dispatch({ type: 'hide', id })} onLock={(deal) => { dispatch({ type: 'deal', deal }); toast('Deal locked in'); }} />;
+      case 'tryBuy': return <TryBuy key={key} data={data} onClose={close}
+        onAdd={({ supplierId, amount }) => replace({ type: 'billForm', preset: { supplierId, amount } })} />;
+      case 'supplierForm': {
+        const supplier = o.id ? data.suppliers.find((s) => s.id === o.id) : null;
+        return <SupplierForm key={key} data={data} supplier={supplier} onClose={close}
+          onSave={(s, isNew) => { dispatch({ type: 'saveSupplier', supplier: s, isNew }); close(); toast(isNew ? `${s.name} added` : 'Saved'); }} />;
+      }
+      case 'billForm': {
+        const bill = o.id ? data.bills.find((b) => b.id === o.id) : null;
+        return <BillForm key={key} data={data} bill={bill} preset={o.preset} onClose={close} onSave={saveBill} onNewSupplier={newSupplier} />;
+      }
+      case 'bill': {
+        const bill = o.pending || data.bills.find((b) => b.id === o.id);
+        if (!bill) return null;
+        const pending = o.pending && data.queue.some((q) => q.id === o.pending.id) ? o.pending : null;
+        return <BillSheet key={key} data={data} bill={bill} pending={pending} onClose={close}
+          onConfirm={() => { go.confirm(bill); close(); }}
+          onPay={() => { const on = bill.paid == null; dispatch({ type: 'pay', id: bill.id, on }); toast(on ? `${name(bill)} ${money(bill.total)} paid` : 'Marked as not paid'); close(); }}
+          onEdit={() => go.editBill(bill.id)}
+          onDelete={() => { dispatch({ type: 'deleteBill', id: bill.id }); deletePhoto(bill.id); toast('Bill deleted'); close(); }} />;
+      }
+      default: return null;
+    }
+  };
+
   return (
-    <div className="app">
+    <div className="app" data-mood={ins.mood}>
       <main className="scroll" ref={scroller}>
-        {tab === 'market' && <Market {...shared} onConfirm={confirm} onOpenSupplier={openSupplier} onTab={goTab} onAccount={() => open({ type: 'account' })} />}
-        {tab === 'bills' && <Bills {...shared} onConfirm={confirm} onPay={pay} onCheck={() => toast('Shows the PDF beside each field once email-in is connected')} />}
-        {tab === 'watch' && <Watch {...shared} onOpenItem={openItem} />}
-        {tab === 'league' && <League {...shared} onOpenSupplier={openSupplier} onCounter={() => openCounter()} onTender={() => open({ type: 'tender' })} />}
+        {tab === 'home' && <Home data={data} ins={ins} go={go} />}
+        {tab === 'bills' && <Bills data={data} ins={ins} go={go} />}
+        {tab === 'suppliers' && <Suppliers data={data} ins={ins} go={go} />}
+        {tab === 'deals' && <Deals data={data} ins={ins} go={go} />}
       </main>
 
       <nav className="tabbar" aria-label="Main">
-        {TABS.map(([k, label]) => (
-          <button key={k} className="tab" aria-current={tab === k && !stack.length ? 'page' : undefined} onClick={() => goTab(k)}>
-            <Icon name={k} />
+        {TABS.map(([k, label]) => k === 'add' ? (
+          <button key={k} className="tab-add" aria-label="Add something" onClick={() => (top?.type === 'menu' ? close() : open({ type: 'menu' }))}>
+            <Icon name="plus" size={28} stroke={2.6} />
+          </button>
+        ) : (
+          <button key={k} className="tab" aria-current={tab === k && !stack.length ? 'page' : undefined} onClick={() => go.tab(k)}>
+            <Icon name={k} size={24} />
             {label}
-            {k === 'bills' && data.queue.length > 0 && <span className="badge num" aria-label={`${data.queue.length} to confirm`}>{data.queue.length}</span>}
+            {k === 'bills' && data.queue.length > 0 && <span className="badge num" aria-label={`${data.queue.length} new`}>{data.queue.length}</span>}
           </button>
         ))}
       </nav>
 
-      {stack.map((o, i) => {
-        const key = `${o.type}-${i}`;
-        if (o.type === 'supplier') return <Supplier key={key} {...shared} supplierId={o.id} onClose={close} onOpenItem={openItem} onDeal={(id) => openCounter(id)} />;
-        if (o.type === 'item') return <ItemSheet key={key} {...shared} itemId={o.id} onClose={close}
-          onAlert={(it, at, on) => { dispatch({ type: 'alert', itemId: it.id, at, on }); toast(on ? `Alert set at ${money(at)}` : 'Alert removed'); close(); }} />;
-        if (o.type === 'tender') return <TenderSheet key={key} {...shared} onClose={close} onSend={() => { toast('Draft saved — sending goes live with email-in'); close(); }} />;
-        if (o.type === 'counter') return <Counter key={key} {...shared} presetSupplier={o.supplierId} onClose={close}
-          onHide={(id) => dispatch({ type: 'hide', id })} onLock={(deal) => { dispatch({ type: 'deal', deal }); toast('Deal locked'); }} />;
-        if (o.type === 'account') return <AccountSheet key={key} data={data} onClose={close} onReset={() => { dispatch({ type: 'reset' }); toast('Sample data reset'); close(); }} />;
-        return null;
-      })}
+      {stack.map(renderOverlay)}
     </div>
   );
 }
 
-function AccountSheet({ data, onClose, onReset }) {
-  const toast = useToast();
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(data.business.forwardAddress); toast('Address copied'); }
-    catch { toast('Could not copy — press and hold the address instead'); }
-  };
-  return (
-    <Sheet label="Account" onClose={onClose}>
-      <div>
-        <div style={{ fontSize: 17, fontWeight: 600 }}>{data.business.name}</div>
-        <div className="muted" style={{ fontSize: 13 }}>{data.business.owner}</div>
-      </div>
-      <div>
-        <div className="field-label">Forward supplier bills to</div>
-        <div className="num" style={{ fontSize: 15, userSelect: 'all', wordBreak: 'break-all' }}>{data.business.forwardAddress}</div>
-        <p className="footnote" style={{ marginTop: 6 }}>Set this as the billing email with each supplier and bills arrive on their own.</p>
-      </div>
-      <button className="btn btn-ghost btn-block" onClick={copy}>Copy address</button>
-      <div style={{ borderTop: '1px solid var(--line)', paddingTop: 14 }}>
-        <p className="muted" style={{ fontSize: 13, margin: '0 0 10px' }}>You're looking at sample data. Changes you make are kept on this phone only.</p>
-        <button className="btn btn-ghost btn-block" onClick={onReset}>Reset sample data</button>
-      </div>
-    </Sheet>
-  );
-}

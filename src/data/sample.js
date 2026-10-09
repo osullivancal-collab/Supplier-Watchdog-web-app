@@ -20,12 +20,14 @@ export const business = {
 };
 
 export const suppliers = [
-  { id: 'reece', name: 'Reece', terms: '30 days EOM' },
-  { id: 'tradelink', name: 'Tradelink', terms: '30 days' },
-  { id: 'middys', name: 'Middys', terms: '30 days EOM' },
-  { id: 'rexel', name: 'Rexel', terms: '14 days' },
-  { id: 'bunnings', name: 'Bunnings Trade', terms: 'Card' },
+  { id: 'reece', name: 'Reece', terms: '30 days EOM', rep: 'Dave Mercer', phone: '03 9421 7780', account: 'RE-09887', branch: 'Reece Dandenong' },
+  { id: 'tradelink', name: 'Tradelink', terms: '30 days', rep: 'Sandra Liu', phone: '03 9388 2210', account: 'TL-44120', branch: 'Tradelink Moorabbin' },
+  { id: 'middys', name: 'Middys', terms: '30 days EOM', rep: 'Paul Nguyen', phone: '03 9555 1020', account: 'MD-30214', branch: 'Middys Oakleigh' },
+  { id: 'rexel', name: 'Rexel', terms: '14 days', rep: '', phone: '13 73 95', account: 'RX-55102', branch: '' },
+  { id: 'bunnings', name: 'Bunnings Trade', terms: 'COD', rep: 'Trade desk', phone: '1300 266 464', account: 'BT-77301', branch: '' },
 ];
+
+const JOBS = ['Smith reno', 'Lot 12 Box Hill', 'Café fit-out', 'Unit 4 rewire'];
 
 // Deterministic generator for a year of bills, so the charts have
 // real-looking history. Each supplier bills on its own rhythm; Reece's bills
@@ -51,7 +53,8 @@ function generateBills() {
       const total = Math.round(typical * (from + (to - from) * t) * (0.7 + rnd() * 0.6) * 100) / 100;
       const card = id === 'bunnings';
       const due = card ? d : d + 30;
-      out.push({ id: 'g' + n, supplierId: id, ref: prefix + n++, total, issued: d, due, paid: card || due < 0 ? due : null });
+      const job = rnd() < 0.7 ? JOBS[Math.floor(rnd() * JOBS.length)] : null;
+      out.push({ id: 'g' + n, supplierId: id, ref: prefix + n++, total, issued: d, due, paid: card || due < 0 ? due : null, job });
     }
   }
   return out;

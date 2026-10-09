@@ -4,8 +4,10 @@ See supplier bills coming before they hit. A phone-first PWA that treats your
 suppliers like a portfolio: what you owe, what's due ahead, who's taking your
 money, and leverage to bargain with.
 
-**Status:** React + Vite PWA running on **sample data**. Email-in (bills
-forwarded to your own address and read automatically) is the next stage.
+**Status:** React + Vite PWA. Opens on **sample data**; Account → "Start with
+my own bills" switches to real use (bills, credits, suppliers, docket photos,
+jobs — kept on the phone for now). Email-in (bills forwarded to your own
+address and read automatically) is the next stage.
 The SvelteKit version is kept on the branch `backup/initial-sveltekit-2026-10-08`.
 
 ## Run it
@@ -24,9 +26,9 @@ npm run smoke      # after build: drives the real app in Chromium at iPhone size
 |---|---|
 | `src/data/sample.js` | Sample bills, prices and deals — shaped exactly like the real records will be |
 | `src/lib/model.js` | Every number on screen, as pure functions (owed balance, bill shock, monthly spend, supplier ranking, deal progress, price gaps) |
-| `src/lib/store.js` | What the user has done on top of the data (confirm, mark paid, alerts, deals). Kept in `localStorage` for now |
+| `src/lib/store.js` | Everything the user adds or changes (bills, suppliers, paid, alerts, deals). Real dates, kept in `localStorage` for now |
 | `src/lib/insights.js` | Runs the model once per change and hands results to the screens |
-| `src/screens/*` | Market, Bills, Watch, League, Supplier page, Counter mode |
+| `src/screens/*` | Home, Bills, Suppliers (+ Prices), Deals, Supplier page, Counter mode, and the add/edit sheets (`Sheets.jsx`) |
 | `src/components/*` | Charts (step chart, bars, mix, gauge), sheets, signature pad |
 | `public/sw.js`, `public/manifest.webmanifest` | Offline support and "Add to Home Screen" |
 
@@ -40,8 +42,10 @@ Key decisions:
   drift out of date.
 - **Bill shock** = next 30 days due ÷ what normally falls due in 30 days
   (average of the last 180 days). 50 is normal; each 10% above adds 7 points.
-- **Colour means something:** orange = costing more, blue = costing less, lime =
-  the one main action on a screen.
+- **Colour means something:** orange = costing more, blue = costing less. The
+  accent follows your position: lime when calm, orange when bill shock is high.
+- **Try a buy** previews a purchase before you make it: when you'd pay it (from
+  the supplier's terms) and what it does to bill shock.
 
 ## Deploy
 

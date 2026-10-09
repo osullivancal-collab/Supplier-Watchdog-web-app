@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  aheadSeries, basketIndex, billShock, dealProgress, dayOffset, monthlySpend,
+  aheadSeries, basketIndex, billShock, dealProgress, dayOffset, dueFromTerms, monthlySpend, previewPurchase, rollingSpend,
   overpay, owedSeries, supplierStats, totalOwed,
 } from './model.js';
 
@@ -123,5 +123,49 @@ describe('calendar', () => {
     const rows = monthlySpend([bill({ total: 5, issued: -3, due: 1 }), bill({ total: 7, issued: -10, due: 1 })], 2, today);
     expect(rows.map((r) => r.total)).toEqual([7, 5]);
     expect(rows[1].current).toBe(true);
+  });
+});
+
+describe('payment terms', () => {
+  const today = new Date(2026, 9, 9); // Fri 9 Oct 2026
+  it('works out due dates the way wholesalers bill', () => {
+    expect(dueFromTerms(0, 'COD', today)).toBe(0);
+    expect(dueFromTerms(0, '14 days', today)).toBe(14);
+    expect(dueFromTerms(0, 'EOM', today)).toBe(22);          // 31 Oct
+    expect(dueFromTerms(0, '30 days EOM', today)).toBe(52);  // 30 Nov
+    expect(dueFromTerms(-15, '30 days EOM', today)).toBe(22); // dated 24 Sep → due 31 Oct
+  });
+});
+
+describe('supplier sparkline', () => {
+  it('is spend in the 30 days up to each day, stepping when bills come and go', () => {
+    const bills = [bill({ supplierId: 'a', total: 100, issued: -40, due: 0 }), bill({ supplierId: 'a', total: 50, issued: -5, due: 20 }), bill({ supplierId: 'b', total: 999, issued: -5, due: 20 })];
+    const s = rollingSpend(bills, 'a', 45);
+    expect(s).toHaveLength(46);
+    expect(s[0]).toBe(0);                 // day -45
+    expect(s[45 - 40]).toBe(100);         // day -40: bill arrives
+    expect(s[45 - 11]).toBe(100);         // day -11: still inside its 30 days
+    expect(s[45 - 10]).toBe(0);           // day -10: it has dropped out
+    expect(s.at(-1)).toBe(50);            // today
+  });
+  it('never goes negative because of bills dated before the chart starts', () => {
+    const bills = [bill({ supplierId: 'a', total: 100, issued: -80, due: 0 }), bill({ supplierId: 'a', total: 40, issued: -3, due: 9 })];
+    const s = rollingSpend(bills, 'a', 45);
+    expect(Math.min(...s)).toBe(0);
+    expect(s.at(-1)).toBe(40);
+  });
+});
+
+describe('try a buy', () => {
+  it('shows when you would pay and what it does to bill shock', () => {
+    const past = [bill({ total: 600, issued: -120, due: -90, paid: -90 })];
+    const p = previewPurchase(past, { supplierId: 'a', amount: 100, terms: '14 days' }, new Date(2026, 9, 9));
+    expect(p.due).toBe(14);
+    expect(p.owedAfter - p.owedBefore).toBe(100);
+    expect(p.after.score).toBeGreaterThan(p.before.score);
+  });
+  it('a cash purchase is paid on the spot and owes nothing', () => {
+    const p = previewPurchase([], { supplierId: 'a', amount: 100, terms: 'COD' });
+    expect(p.owedAfter).toBe(0);
   });
 });
