@@ -1,20 +1,24 @@
 import { useState } from 'react';
 import Icon from '../components/Icon.jsx';
+import { BillCalendar } from '../components/Portfolio.jsx';
 import { BillRow } from '../components/Rows.jsx';
 import { useCountUp } from '../components/UI.jsx';
 import { dayLabel, money, money0 } from '../lib/format.js';
 import { vendorName } from '../lib/store.js';
 
+// Credits (returns) aren't owed: they sit in their own group, never "overdue".
 const GROUPS = [
-  ['Overdue', (b) => b.due < 0],
-  ['This week', (b) => b.due >= 0 && b.due <= 6],
-  ['Next week', (b) => b.due > 6 && b.due <= 13],
-  ['Later', (b) => b.due > 13],
+  ['Overdue', (b) => b.total > 0 && b.due < 0],
+  ['This week', (b) => b.total > 0 && b.due >= 0 && b.due <= 6],
+  ['Next week', (b) => b.total > 0 && b.due > 6 && b.due <= 13],
+  ['Later', (b) => b.total > 0 && b.due > 13],
+  ['Credits to use', (b) => b.total <= 0],
 ];
 
-export default function Bills({ data, ins, go }) {
-  const [tab, setTab] = useState(data.queue.length ? 'confirm' : 'pay');
-  const [job, setJob] = useState(null);
+export default function Bills({ data, ins, go, initialJob = null }) {
+  const [tab, setTab] = useState(data.queue.length && !initialJob ? 'confirm' : 'pay');
+  const [job, setJob] = useState(initialJob || null);
+  const [asCalendar, setAsCalendar] = useState(false);
   const owed = useCountUp(ins.owed);
   const name = (b) => vendorName(b, data.suppliers);
   const byJob = (b) => !job || b.job === job;
@@ -28,7 +32,13 @@ export default function Bills({ data, ins, go }) {
           <h1 className="title">Bills</h1>
           <div className="num" style={{ fontSize: 17, fontWeight: 700, marginTop: 2 }}>{money(owed)} <span className="muted" style={{ fontWeight: 500 }}>owed</span></div>
         </div>
-        <button className="btn btn-secondary" style={{ height: 44, fontSize: 15 }} onClick={() => go.addBill()}><Icon name="plus" size={18} />Add</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary" style={{ height: 44, fontSize: 15, padding: '0 14px' }} aria-pressed={asCalendar}
+            onClick={() => { setAsCalendar((v) => !v); setTab('pay'); }}>
+            <Icon name={asCalendar ? 'bills' : 'calendar'} size={18} />{asCalendar ? 'List' : 'Calendar'}
+          </button>
+          <button className="btn btn-secondary" style={{ height: 44, fontSize: 15, padding: '0 14px' }} onClick={() => go.addBill()}><Icon name="plus" size={18} />Add</button>
+        </div>
       </div>
 
       <div className="seg" role="tablist">
@@ -65,7 +75,9 @@ export default function Bills({ data, ins, go }) {
           ))
       )}
 
-      {tab === 'pay' && (
+      {tab === 'pay' && asCalendar && <BillCalendar bills={data.bills.filter(byJob)} suppliers={data.suppliers} onOpenBill={go.bill} />}
+
+      {tab === 'pay' && !asCalendar && (
         open.length === 0
           ? <div className="card empty"><Icon name="check" size={32} style={{ color: 'var(--down)' }} /><div className="h2">Nothing owing</div><button className="btn btn-primary" onClick={() => go.addBill()}>Add a bill</button></div>
           : GROUPS.map(([title, test]) => {

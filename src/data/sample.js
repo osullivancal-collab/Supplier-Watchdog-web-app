@@ -63,11 +63,16 @@ function generateBills() {
 // A few one-offs on top of the rhythm: an overdue bill and two non-trade bills.
 const extras = [
   { id: 'b1', supplierId: 'tradelink', ref: 'TL-2041', total: 1842.5, issued: -37, due: -7 },
+  // Returns: one credit already used against a bill, one still sitting on the account.
+  { id: 'c1', supplierId: 'reece', ref: 'CR-88120', total: -142.0, issued: -64, due: -64, paid: -60 },
+  { id: 'c2', supplierId: 'middys', ref: 'MC-5521', total: -86.5, issued: -12, due: -12 },
   { id: 'b4', supplierId: null, vendor: 'Telstra', ref: 'TEL-OCT', total: 195.0, issued: -22, due: 8 },
   { id: 'b5', supplierId: null, vendor: 'CSR Gyprock', ref: 'CSR-2019', total: 760.4, issued: -19, due: 11 },
-].map((b) => ({ ...b, paid: null }));
+].map((b) => ({ paid: null, ...b }));
 
-export const bills = [...generateBills(), ...extras];
+// Real tradies pay some bills late: every 9th account bill a few days over.
+const generated = generateBills().map((b, i) => (b.paid != null && b.due !== b.issued && i % 9 === 4 && b.due + 4 < 0 ? { ...b, paid: b.due + 4 } : b));
+export const bills = [...generated, ...extras];
 
 // Bills read from email that the user has not confirmed yet. They count for
 // nothing until confirmed. `confidence` is how sure the reader was.

@@ -233,6 +233,7 @@ export function BillSheet({ data, bill, pending, onClose, onPay, onEdit, onDelet
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
           {pending ? <span className="tag warn">Not confirmed</span>
             : paid ? <span className="tag down">Paid {dayLabel(bill.paid)}</span>
+            : credit ? <span className="tag">Not used yet</span>
             : <span className={`tag ${bill.due < 0 ? 'up' : ''}`}>{whenDue(bill.due)}</span>}
           {credit && <span className="tag down">Credit</span>}
           {bill.job && <span className="tag">{bill.job}</span>}

@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { DotChart, Donut, Gauge, StepChart } from '../components/Charts.jsx';
 import Icon from '../components/Icon.jsx';
-import { HoldingRow } from '../components/Rows.jsx';
+import { Heatmap, StatPills, Ticker, basedOn } from '../components/Portfolio.jsx';
 import { useCountUp } from '../components/UI.jsx';
 import { bucketDescriber, greeting } from '../lib/buckets.js';
-import { dayLabel, dirClass, kfmt, money, money0, todayLabel, whenDue } from '../lib/format.js';
+import { dayLabel, dirClass, kfmt, money, money0, pct, todayLabel, whenDue } from '../lib/format.js';
 import { shockTone } from '../lib/insights.js';
 import { catches as findCatches, spendBuckets } from '../lib/model.js';
 import { daysLeft } from '../lib/backend.js';
@@ -27,7 +27,6 @@ export default function Home({ data, ins, go, account = null }) {
   const buckets = useMemo(() => spendBuckets(data.bills, range), [data.bills, range]);
   const caught = useMemo(() => findCatches(data).filter((c) => !data.disputes[c.id]), [data]);
   const sh = ins.shock;
-  const top = ins.ranked.filter((s) => s.spend > 0).slice(0, 4);
   const now = new Date();
 
   // ----- the number at the top follows the view, and your finger on the chart -----
@@ -70,7 +69,8 @@ export default function Home({ data, ins, go, account = null }) {
 
       <TrialBanner access={account?.access} go={go} />
       {ins.empty ? <Welcome go={go} /> : (
-        <div className="page" style={{ paddingTop: 10, gap: 18 }}>
+        <div className="page" style={{ paddingTop: 4, gap: 18 }}>
+          <Ticker ranked={ins.ranked} onOpen={go.supplier} />
           <section className="market" aria-label="Your supplier spend">
             <div className="seg" role="tablist" aria-label="Chart view">
               {VIEWS.map(([k, l]) => <button key={k} role="tab" aria-selected={view === k} onClick={() => pick(k)}>{l}</button>)}
@@ -103,19 +103,36 @@ export default function Home({ data, ins, go, account = null }) {
             {view === 'shock' && <p className="market-help">How much is falling due in the next 30 days compared with a normal month. Over 60 means a heavy month is coming.</p>}
           </section>
 
+          <StatPills pills={pills(ins, go)} />
+          <div className="based">{basedOn(ins.billCount)}</div>
+
           <NeedsYou data={data} ins={ins} go={go} caught={caught} name={name} />
 
-          <section>
-            <div className="section-head"><h2 className="h2">Your suppliers</h2><button className="link" onClick={() => go.tab('suppliers')}>See all</button></div>
-            <div className="card" style={{ padding: '4px 16px' }}>
-              {top.map((s, i) => <HoldingRow key={s.id} s={s} index={i} onOpen={go.supplier} />)}
-              {top.length === 0 && <p className="muted" style={{ padding: '18px 0' }}>No supplier bills in the last 90 days.</p>}
-            </div>
+          <section aria-label="Where your money goes">
+            <div className="section-head"><h2 className="h2">Where your money goes</h2><button className="link" onClick={() => go.tab('suppliers')}>Market</button></div>
+            <Heatmap ranked={ins.ranked} onOpen={go.supplier} />
+            <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>Size is the last 90 days' spend. Red is paying more than the 90 days before, green is paying less.</p>
           </section>
         </div>
       )}
     </div>
   );
+}
+
+/** The stat cards under the chart, like the stats row under a share price. */
+function pills(ins, go) {
+  const { riser, faller, gst, eom, record, back, year } = ins;
+  const lead = ins.ranked.find((s) => s.spend > 0);
+  return [
+    riser && { key: 'riser', label: 'Top riser', value: riser.name, tone: null, sub: `${pct(riser.change)} on 90 days`, subTone: 'up', onClick: () => go.supplier(riser.id) },
+    faller && { key: 'faller', label: 'Top faller', value: faller.name, sub: `${pct(faller.change)} on 90 days`, subTone: 'down', onClick: () => go.supplier(faller.id) },
+    lead && { key: 'lead', label: 'Biggest holding', value: lead.name, sub: `${lead.share.toFixed(0)}% of spend`, onClick: () => go.supplier(lead.id) },
+    gst.count > 0 && { key: 'gst', label: 'GST to claim', value: `${gst.estimated ? '≈' : ''}${money0(gst.amount)}`, tone: 'down', sub: `${gst.label} · BAS in ${gst.lodgeIn}d`, onClick: () => go.gst() },
+    eom.suppliers.length > 0 && { key: 'eom', label: 'EOM cut-off', value: `${eom.daysLeft} day${eom.daysLeft === 1 ? '' : 's'}`, sub: `Buy on the 1st: +${eom.creditFirst - eom.creditToday} days`, subTone: 'due', onClick: () => go.eom() },
+    record.onTimePct != null && { key: 'record', label: 'Paid on time', value: `${record.onTimePct}%`, tone: record.onTimePct >= 90 ? 'down' : record.onTimePct < 70 ? 'up' : null, sub: record.streak ? `${record.streak} in a row` : `${record.lateCount} late`, onClick: () => go.tab('deals') },
+    back.count > 0 && { key: 'back', label: 'Money back', value: money0(back.credits), tone: 'down', sub: back.unused ? `${money0(back.unused)} credit unused` : `${back.count} credit${back.count === 1 ? '' : 's'} this year`, subTone: back.unused ? 'due' : null, onClick: () => go.tab('deals') },
+    year.spend > 0 && { key: 'year', label: 'Last 12 months', value: kfmt(year.spend), sub: `${money0(year.perWeek)} a week`, onClick: () => go.year() },
+  ];
 }
 
 /**
@@ -133,14 +150,14 @@ function NeedsYou({ data, ins, go, caught, name }) {
         action: ['Confirm', () => go.confirm(q)], open: () => go.bill(q.id, q) });
     }
   }
-  for (const b of ins.open.filter((x) => x.due < 0)) {
+  for (const b of ins.open.filter((x) => x.total > 0 && x.due < 0)) {
     rows.push({ key: `o${b.id}`, icon: 'bell', tone: 'up', title: `Overdue · ${name(b)}`, sub: `${whenDue(b.due)}${b.ref ? ` · ${b.ref}` : ''}`, amount: money(b.total), amountTone: 'up', open: () => go.bill(b.id) });
   }
   if (caught.length) {
     const total = caught.reduce((t, c) => t + c.amount, 0);
     rows.push({ key: 'caught', icon: 'eye', tone: 'down', title: `Watchdog caught ${money0(total)}`, sub: `${caught.length} overcharge${caught.length === 1 ? '' : 's'} you can push back on`, action: ['See them', () => go.caught()] });
   }
-  const soon = ins.open.filter((b) => b.due >= 0 && b.due <= 6);
+  const soon = ins.open.filter((b) => b.total > 0 && b.due >= 0 && b.due <= 6);
   if (soon.length) {
     rows.push({ key: 'soon', icon: 'bills', tone: null, title: `${soon.length} bill${soon.length === 1 ? '' : 's'} due this week`, sub: `Next: ${name(soon[0])} ${whenDue(soon[0].due).toLowerCase()}`, amount: money0(sum(soon)), open: () => go.tab('bills') });
   }

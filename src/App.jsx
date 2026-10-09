@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Icon from './components/Icon.jsx';
+import { EomSheet, GstSheet, YearSheet } from './components/Portfolio.jsx';
+import { catches as findCatches } from './lib/model.js';
 import { Sheet, ToastProvider, useToast } from './components/UI.jsx';
 import { money } from './lib/format.js';
 import { useInsights } from './lib/insights.js';
@@ -15,7 +17,7 @@ import { AccountSheet, AddMenu, BillForm, BillSheet, DisputeSheet, ItemSheet, Su
 import Supplier from './screens/Supplier.jsx';
 import Suppliers from './screens/Suppliers.jsx';
 
-const TABS = [['home', 'Home'], ['bills', 'Bills'], ['add', ''], ['suppliers', 'Suppliers'], ['deals', 'Deals']];
+const TABS = [['home', 'Home'], ['bills', 'Bills'], ['add', ''], ['suppliers', 'Market'], ['deals', 'Deals']];
 
 export default function App() {
   return <ToastProvider><Root /></ToastProvider>;
@@ -115,6 +117,7 @@ function Shell({ data, dispatch, account = null, onSignIn = null }) {
   const ins = useInsights(data);
   const toast = useToast();
   const [tab, setTab] = useState('home');
+  const [jobFilter, setJobFilter] = useState(null);
   const scroller = useRef(null);
   const { stack, open, replace, close, closeAll } = useOverlays();
   const name = (b) => vendorName(b, data.suppliers);
@@ -123,7 +126,7 @@ function Shell({ data, dispatch, account = null, onSignIn = null }) {
   const fromMenu = (o) => (top?.type === 'menu' ? replace(o) : open(o));
 
   const go = {
-    tab: (t) => { closeAll(); setTab(t); scroller.current?.scrollTo(0, 0); },
+    tab: (t) => { closeAll(); setJobFilter(null); setTab(t); scroller.current?.scrollTo(0, 0); },
     supplier: (id) => open({ type: 'supplier', id }),
     bill: (id, pending) => open({ type: 'bill', id, pending }),
     item: (id) => open({ type: 'item', id }),
@@ -131,6 +134,10 @@ function Shell({ data, dispatch, account = null, onSignIn = null }) {
     tender: () => open({ type: 'tender' }),
     dispute: (c) => open({ type: 'dispute', c }),
     caught: () => open({ type: 'caught' }),
+    gst: () => open({ type: 'gst' }),
+    eom: () => open({ type: 'eom' }),
+    year: () => open({ type: 'year' }),
+    job: (j) => { setJobFilter(j); closeAll(); setTab('bills'); scroller.current?.scrollTo(0, 0); },
     account: () => open({ type: 'account' }),
     addBill: (supplierId, extra = {}) => fromMenu({ type: 'billForm', preset: { supplierId, ...extra } }),
     editBill: (id) => replace({ type: 'billForm', id }),
@@ -167,6 +174,9 @@ function Shell({ data, dispatch, account = null, onSignIn = null }) {
     const key = `${o.type}-${i}`;
     switch (o.type) {
       case 'menu': return <AddMenu key={key} onClose={close} go={go} />;
+      case 'gst': return <GstSheet key={key} gst={ins.gst} onClose={close} />;
+      case 'eom': return <EomSheet key={key} eom={ins.eom} onClose={close} />;
+      case 'year': return <YearSheet key={key} year={ins.year} record={ins.record} back={ins.back} caught={findCatches(data).filter((c) => !data.disputes[c.id]).reduce((t, c) => t + c.amount, 0)} onClose={close} />;
       case 'caught': return (
         <Sheet key={key} title="Watchdog caught" onClose={close}>
           <p className="muted" style={{ marginTop: -6 }}>Places you've been charged more than you need to be. Dispute one and Watchdog writes the message.</p>
@@ -213,7 +223,7 @@ function Shell({ data, dispatch, account = null, onSignIn = null }) {
     <div className="app">
       <main className="scroll" ref={scroller}>
         {tab === 'home' && <Home data={data} ins={ins} go={go} account={account} />}
-        {tab === 'bills' && <Bills data={data} ins={ins} go={go} />}
+        {tab === 'bills' && <Bills key={jobFilter || 'all'} data={data} ins={ins} go={go} initialJob={jobFilter} />}
         {tab === 'suppliers' && <Suppliers data={data} ins={ins} go={go} />}
         {tab === 'deals' && <Deals data={data} ins={ins} go={go} />}
       </main>

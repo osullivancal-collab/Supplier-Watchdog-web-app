@@ -49,11 +49,29 @@ try {
   // No sideways overflow on any main screen, at small, normal and big phones.
   for (const width of [375, 390, 430]) {
     await page.setViewportSize({ width, height: 844 });
-    for (const t of ['Home', 'Bills', 'Suppliers', 'Deals']) { await tab(t); await settle(150); if (!(await noOverflow())) throw new Error(`FAILED: ${t} overflows at ${width}px`); }
+    for (const t of ['Home', 'Bills', 'Market', 'Deals']) { await tab(t); await settle(150); if (!(await noOverflow())) throw new Error(`FAILED: ${t} overflows at ${width}px`); }
     check(true, `no sideways overflow on any tab at ${width}px`);
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await tab('Home');
+
+  // Portfolio bits: ticker, stat pills and the sheets behind them.
+  check(await page.locator('.ticker .tick').count() >= 10, 'ticker tape shows every supplier (twice, for the loop)');
+  for (const k of ['Top riser', 'Top faller', 'Biggest holding', 'GST to claim', 'EOM cut-off', 'Paid on time', 'Money back', 'Last 12 months']) {
+    check(await page.locator('.stat', { hasText: k }).count() === 1, `stat pill: ${k}`);
+  }
+  check((await page.locator('.based').textContent()).startsWith('Based on'), 'says how many bills the numbers come from');
+  await page.locator('.stat', { hasText: 'GST to claim' }).click();
+  check((await page.locator('.sheet').textContent()).includes('BAS is due'), 'GST pill explains the BAS quarter');
+  await page.goBack(); await settle(300);
+  await page.locator('.stat', { hasText: 'EOM cut-off' }).click();
+  check(await page.locator('.sheet').getByText(/days to pay/).count() === 2, 'EOM pill compares buying today vs on the 1st');
+  await page.goBack(); await settle(300);
+  await page.locator('.stat', { hasText: 'Last 12 months' }).click();
+  check(await page.locator('.year-row').count() >= 5, 'year in review opens');
+  await shot('year');
+  await page.goBack(); await settle(300);
+  check(await page.locator('.heat-tile').count() === 5, 'heatmap has a tile per supplier');
 
   // Four chart views, and the number follows the view and your finger.
   const label = () => page.locator('.market-label').textContent();
@@ -111,7 +129,7 @@ try {
   await page.goBack(); await settle(300);
 
   // Supplier page from a holding row; back gesture closes it.
-  await page.locator('.holding').first().click();
+  await page.locator('.heat-tile').first().click();
   await page.waitForSelector('.fullscreen');
   check(await page.getByText('You owe them').count() === 1, 'supplier page shows what you owe them');
   check(await page.locator('.fullscreen a[href^="tel:"]').count() === 1, 'supplier page has a call button');
@@ -136,7 +154,7 @@ try {
   await page.locator('.action', { hasText: 'Add a supplier' }).click();
   await page.getByLabel('Name').fill('Haymes Paint');
   await page.getByRole('button', { name: 'Add supplier' }).click();
-  await tab('Suppliers');
+  await tab('Market');
   check(await page.locator('.holding', { hasText: 'Haymes Paint' }).count() === 1, 'new supplier appears in Suppliers');
   await shot('suppliers');
 
@@ -167,8 +185,21 @@ try {
   check((await page.getByLabel('Amount').inputValue()) === '5000', 'try a buy carries the amount into a new bill');
   await page.getByRole('button', { name: 'Add bill', exact: true }).click();
 
+  // Market: jobs as positions, and a job opens its bills.
+  await tab('Market');
+  await page.getByRole('tab', { name: 'Jobs' }).click();
+  check(await page.locator('.holding', { hasText: 'Smith reno' }).count() === 1, 'jobs show as positions');
+  await page.locator('.holding', { hasText: 'Smith reno' }).click();
+  check(await page.locator('.chip[aria-pressed="true"]', { hasText: 'Smith reno' }).count() === 1, 'a job opens its bills, filtered');
+  await page.getByRole('button', { name: 'Calendar' }).click();
+  check(await page.locator('.cal-day').count() >= 28, 'bills calendar shows the month');
+  await page.locator('.cal-day:has(.cal-amt)').first().click();
+  check(await page.locator('.cal-bill').count() >= 1, 'tapping a heavy day lists what is due');
+  await shot('calendar');
+  await page.getByRole('button', { name: 'List' }).click();
+
   // Prices + alert.
-  await tab('Suppliers');
+  await tab('Market');
   await page.getByRole('tab', { name: 'Prices' }).click();
   await shot('prices');
   await page.locator('.holding').first().click();
@@ -207,7 +238,7 @@ try {
   await page.reload();
   await tab('Deals');
   check(await page.getByText('Reward: Milwaukee Packout · with Dave').count() === 1, 'deal is still there after reload');
-  await tab('Suppliers');
+  await tab('Market');
   check(await page.locator('.holding', { hasText: 'Haymes Paint' }).count() === 1, 'added supplier is still there after reload');
 
   // Dark look from Account, and back.

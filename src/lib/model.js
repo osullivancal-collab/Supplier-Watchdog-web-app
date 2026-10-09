@@ -204,7 +204,8 @@ export function rollingSpend(bills, supplierId, days = 90, window = 30) {
 /** What is owed to one supplier right now, and their next due bill. */
 export function supplierPosition(bills, supplierId) {
   const open = openBills(bills).filter((b) => b.supplierId === supplierId);
-  return { owed: round2(sum(open)), next: open.find((b) => b.due >= 0) || open[0] || null, open };
+  const owing = open.filter((b) => b.total > 0);
+  return { owed: round2(sum(open)), next: owing.find((b) => b.due >= 0) || owing[0] || null, open };
 }
 
 /** Effect of a purchase you're about to make: where it lands and what it does to bill shock. */

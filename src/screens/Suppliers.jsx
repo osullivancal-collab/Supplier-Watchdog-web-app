@@ -2,7 +2,8 @@ import { useState } from 'react';
 import Icon from '../components/Icon.jsx';
 import { PriceSteps } from '../components/Charts.jsx';
 import { HoldingRow } from '../components/Rows.jsx';
-import { dirClass, money, pct } from '../lib/format.js';
+import { dirClass, kfmt, money, pct } from '../lib/format.js';
+import { Heatmap, JobRow } from '../components/Portfolio.jsx';
 import { basketIndex, bestPrice, itemChange } from '../lib/model.js';
 
 const SORTS = [
@@ -20,13 +21,25 @@ export default function Suppliers({ data, ins, go }) {
   return (
     <div className="page" style={{ paddingTop: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h1 className="title">Suppliers</h1>
+        <div>
+          <h1 className="title">Market</h1>
+          <div className="muted num" style={{ fontSize: 15, marginTop: 2 }}>{kfmt(ins.total90)} over 90 days · {ins.spread.count} suppliers · {ins.spread.label.toLowerCase()}</div>
+        </div>
         <button className="btn btn-secondary" style={{ height: 44, fontSize: 15 }} onClick={() => go.addSupplier()}><Icon name="plus" size={18} />Add</button>
       </div>
+      <Heatmap ranked={ins.ranked} onOpen={go.supplier} height={210} />
       <div className="seg" role="tablist">
         <button role="tab" aria-selected={tab === 'suppliers'} onClick={() => setTab('suppliers')}>Suppliers</button>
+        <button role="tab" aria-selected={tab === 'jobs'} onClick={() => setTab('jobs')}>Jobs</button>
         <button role="tab" aria-selected={tab === 'prices'} onClick={() => setTab('prices')}>Prices</button>
       </div>
+
+      {tab === 'jobs' && (
+        <div className="card" style={{ padding: '4px 16px' }}>
+          {ins.jobs.map((j) => <JobRow key={j.job} j={j} onOpen={go.job} />)}
+          {ins.jobs.length === 0 && <div className="empty"><div className="h2">No jobs yet</div><p className="muted">Put a job name on a bill and it shows up here, with what it's cost so far.</p></div>}
+        </div>
+      )}
 
       {tab === 'suppliers' && (
         <>

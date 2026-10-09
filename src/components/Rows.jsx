@@ -32,7 +32,7 @@ export function HoldingRow({ s, onOpen, show = 'change', index = 0 }) {
 /** A bill: date tile, who, and how much. Overdue bills turn orange. */
 export function BillRow({ bill, suppliers, onOpen, showPaid }) {
   const d = dateParts(bill.paid != null && showPaid ? bill.paid : bill.due);
-  const overdue = bill.paid == null && bill.due < 0;
+  const overdue = bill.paid == null && bill.total > 0 && bill.due < 0;
   const credit = bill.total < 0;
   const sub = [
     bill.paid != null && showPaid ? 'Paid' : whenDue(bill.due),

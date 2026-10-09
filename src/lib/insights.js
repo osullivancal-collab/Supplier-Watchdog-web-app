@@ -3,6 +3,7 @@ import {
   aheadSeries, billShock, monthForecast, monthlySpend, openBills, owedSeries, rollingSpend, supplierPosition,
   supplierStats, totalOwed,
 } from './model.js';
+import { concentration, eomCutoff, gstToClaim, jobStats, moneyBack, paymentRecord, yearReview } from './portfolio.js';
 
 /** Everything the screens show, derived once per data change. */
 export function useInsights(data) {
@@ -37,10 +38,19 @@ export function insights({ bills, suppliers }) {
     months,
     avgMonth,
     forecast: monthForecast(bills),
-    overdue: open.filter((b) => b.due < 0).reduce((t, b) => t + b.total, 0),
-    next7: open.filter((b) => b.due <= 6).reduce((t, b) => t + b.total, 0),
-    riser: byChange[0] || null,
-    faller: byChange.length > 1 ? byChange[byChange.length - 1] : null,
+    overdue: open.filter((b) => b.total > 0 && b.due < 0).reduce((t, b) => t + b.total, 0),
+    next7: open.filter((b) => b.total > 0 && b.due <= 6).reduce((t, b) => t + b.total, 0),
+    riser: byChange[0] && byChange[0].change > 0 ? byChange[0] : null,
+    // Portfolio numbers (portfolio.js), all from bills alone.
+    billCount: bills.length,
+    gst: gstToClaim(bills),
+    eom: eomCutoff(suppliers),
+    record: paymentRecord(bills),
+    back: moneyBack(bills),
+    spread: concentration(ranked),
+    jobs: jobStats(bills),
+    year: yearReview(bills, suppliers),
+    faller: byChange.length > 1 && byChange.at(-1).change < 0 ? byChange.at(-1) : null,
   };
 }
 

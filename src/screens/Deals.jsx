@@ -54,6 +54,37 @@ export default function Deals({ data, ins, go }) {
         <Icon name="chevron" size={22} />
       </button>
 
+      <section aria-label="Your bargaining hand">
+        <h2 className="h2" style={{ marginBottom: 4 }}>Your bargaining hand</h2>
+        <p className="muted" style={{ fontSize: 14, marginBottom: 10 }}>What a rep wants to hear. Show them in Counter mode.</p>
+        <div className="tiles">
+          {ins.spread.top && (
+            <button className="tile" onClick={() => go.supplier(ins.spread.top.id)}>
+              <span className="tile-k">Your whale status</span>
+              <span className="tile-v num">{ins.spread.topShare.toFixed(0)}%</span>
+              <span className="tile-sub muted">of your spend goes to {ins.spread.top.name}. {ins.spread.label === 'Concentrated' ? "They can't afford to lose you." : 'Room to move it around.'}</span>
+            </button>
+          )}
+          {ins.record.onTimePct != null && (
+            <div className="tile">
+              <span className="tile-k">Paid on time</span>
+              <span className={`tile-v num ${ins.record.onTimePct >= 90 ? 'down' : ins.record.onTimePct < 70 ? 'up' : ''}`}>{ins.record.onTimePct}%</span>
+              <span className="tile-sub muted">{ins.record.streak} in a row · {ins.record.lateCount} late this year{ins.record.lateCount ? `, ${ins.record.avgDaysLate} days on average` : ''}</span>
+            </div>
+          )}
+          <div className="tile">
+            <span className="tile-k">Money back</span>
+            <span className="tile-v num down">{money0(ins.back.credits)}</span>
+            <span className="tile-sub muted">{ins.back.count} credit{ins.back.count === 1 ? '' : 's'} this year{ins.back.unused ? ` · ${money0(ins.back.unused)} not used yet` : ''}</span>
+          </div>
+          <div className="tile">
+            <span className="tile-k">Yearly spend</span>
+            <span className="tile-v num">{money0(Math.round(ins.year.spend / 1000) * 1000)}</span>
+            <span className="tile-sub muted">{money0(ins.year.perWeek)} a week across {ins.year.suppliers} suppliers</span>
+          </div>
+        </div>
+      </section>
+
       <section>
         <h2 className="h2" style={{ marginBottom: 10 }}>Active deals</h2>
         {data.deals.length === 0 && <div className="card muted">None yet — make one at the counter.</div>}
