@@ -48,7 +48,7 @@ h1, h2, h3, p { margin: 0; }
 .mood { color: var(--mood); }
 
 /* ----- shell ----- */
-.app { height: 100dvh; max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; position: relative; overflow: hidden; background: var(--bg); }
+.app { height: 100%; max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; position: relative; overflow: hidden; background: var(--bg); }
 .glow { position: absolute; left: 0; right: 0; top: -180px; height: 420px; background: radial-gradient(farthest-side at 50% 50%, color-mix(in srgb, var(--mood) 18%, transparent), transparent); pointer-events: none; transition: background .6s ease; }
 .scroll { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; scrollbar-width: none; position: relative; }
 .scroll::-webkit-scrollbar { display: none; }

@@ -8,7 +8,7 @@ createRoot(document.getElementById('root')).render(<StrictMode><App /></StrictMo
 
 // Offline support + "Add to Home Screen". Production only, so local
 // development never serves stale files from the cache.
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+if (import.meta.env.PROD && !import.meta.env.VITE_NO_SW && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch((e) => console.error('[watchdog] service worker failed', e));
   });

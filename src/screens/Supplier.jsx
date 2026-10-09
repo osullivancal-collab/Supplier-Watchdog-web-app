@@ -74,6 +74,7 @@ export default function Supplier({ data, ins, supplierId, go, onClose }) {
             {s.rep && <Line k="Rep" v={s.rep} />}
             {s.branch && <Line k="Branch" v={s.branch} />}
             {s.terms && <Line k="Terms" v={s.terms} />}
+            {s.phone && <Line k="Phone" v={s.phone} />}
             {s.account && <Line k="Account no." v={s.account} action={<button className="icon-btn" aria-label="Copy account number" onClick={() => copy(s.account)}><Icon name="copy" size={17} /></button>} />}
             {s.phone && <a className="btn btn-secondary btn-block" href={`tel:${s.phone.replace(/\s/g, '')}`}><Icon name="phone" size={18} />Call {s.rep && s.rep !== 'Trade desk' ? s.rep.split(' ')[0] : s.name}</a>}
           </section>
