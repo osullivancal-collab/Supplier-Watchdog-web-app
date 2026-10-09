@@ -1,5 +1,11 @@
 # Wholesaler Watchdog — Security & Persistence Plan
 
+> **Update:** this was the original plan. What was actually built is in
+> [BACKEND.md](BACKEND.md) and `supabase/migrations/001_watchdog_schema.sql`.
+> Table names changed (`wholesalers` → `suppliers`, `invoices` → `bills`,
+> `line_items` → `bill_lines`); the rules below (row-level security on every
+> table, private storage, AI only reads, the maths is plain code) all still hold.
+
 This document covers what must be in place before the frontend connects to live
 data. It is written for the backend build (Supabase). The guiding principle from
 the architecture sessions still holds: **AI only converts documents to JSON; all

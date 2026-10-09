@@ -53,11 +53,15 @@ Vercel builds this with `vercel.json` (Vite, output `dist`). The Vercel project
 is still set to the SvelteKit framework preset — switch it to Vite (or let
 `vercel.json` override it) before the first production deploy.
 
+## Backend
+
+Login, database, paid plans and bill reading are in [BACKEND.md](BACKEND.md),
+mostly copied from SoleTasker's backend. It's built and tested but not
+switched on: the app stays on-phone until a Watchdog Supabase project and keys
+exist.
+
 ## Next: email-in
 
-Port the generic pieces from the SoleTasker pattern into this repo (no shared
-code, keys or Supabase project): Resend inbound webhook with signature check,
-attachment validation and text extraction, per-account forwarding token, rate
-limits. Then a new invoice reader (supplier, invoice number, dates, total, GST,
-line items) feeding a new Supabase project. Line items are what powers Watch and
-the price leverage — no extra AI call.
+Port SoleTasker's email intake: Resend inbound webhook with signature check,
+attachment validation and text extraction. The per-account forwarding token,
+its limits and the invoice reader it feeds are already in place.
