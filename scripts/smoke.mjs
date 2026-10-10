@@ -72,9 +72,18 @@ try {
   await shot('year');
   await page.goBack(); await settle(300);
   check(await page.locator('.heat-tile').count() === 5, 'heatmap has a tile per supplier');
+  // Credit limit: Tradelink is close, so it shows in Needs you and on its page.
+  check(await page.locator('.stat', { hasText: 'Credit used' }).count() === 1, 'stat pill: Credit used');
+  await page.locator('.todo', { hasText: 'Tradelink at 90% of credit limit' }).click();
+  await page.waitForSelector('.fullscreen');
+  check((await page.locator('section[aria-label="Credit limit"]').textContent()).includes('hit the limit'), 'supplier page warns before the limit is hit');
+  await shot('credit');
+  await page.goBack(); await settle(300);
+  check(await page.locator('section[aria-label="Your suppliers"] .holding').count() === 4, 'supplier rows are back on Home');
 
   // Four chart views, and the number follows the view and your finger.
   const label = () => page.locator('.market-label').textContent();
+  await page.locator('.market').scrollIntoViewIfNeeded(); await settle(200);
   const ch = await page.locator('.market .chart').boundingBox();
   await page.mouse.move(ch.x + ch.width * 0.3, ch.y + ch.height / 2);
   check(/^Owed /.test(await label()), `dragging over the owed chart shows that day (${await label()})`);
@@ -243,12 +252,12 @@ try {
 
   // Dark look from Account, and back.
   await tab('Home');
-  await page.getByRole('button', { name: 'Account' }).click();
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
   await page.getByRole('tab', { name: 'Dark' }).click();
   check(await page.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'dark look can be switched on');
   await page.goBack(); await settle(300);
   await shot('home-dark');
-  await page.getByRole('button', { name: 'Account' }).click();
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
   await page.getByRole('tab', { name: 'Light' }).click();
 
   // Start fresh with your own bills.

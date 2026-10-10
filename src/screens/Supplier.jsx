@@ -7,6 +7,7 @@ import { dayLabel, dirClass, money, money0, pct, whenDue } from '../lib/format.j
 import { itemChange, overpay, spendBuckets } from '../lib/model.js';
 import { bucketDescriber } from '../lib/buckets.js';
 import { describeDeal, dealLine } from './Deals.jsx';
+import { creditLine } from '../lib/portfolio.js';
 
 const RANGES = ['3M', '6M', '1Y'];
 
@@ -66,6 +67,8 @@ export default function Supplier({ data, ins, supplierId, go, onClose }) {
             <span className="tile-sub muted">{s.billCount} bills · avg {money0(s.avgBill)}</span>
           </div>
         </div>
+
+        <CreditCard c={ins.credit.find((c) => c.id === s.id)} onSet={() => go.editSupplier(s.id)} />
 
         <div style={{ display: 'flex', gap: 10 }}>
           <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => go.addBill(s.id)}><Icon name="plus" size={18} />Add bill</button>
@@ -162,5 +165,41 @@ function Line({ k, v, action }) {
         <span className="num" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</span>{action}
       </span>
     </div>
+  );
+}
+
+/** The account's credit limit: how much is used, and whether you'll hit it before the next payment. */
+function CreditCard({ c, onSet }) {
+  if (!c) {
+    return (
+      <button className="card card-tap" onClick={onSet} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span className="action-icon" style={{ background: 'var(--card-2)' }}><Icon name="bolt" size={20} /></span>
+        <span style={{ flex: 1 }}>
+          <span style={{ display: 'block', fontWeight: 800 }}>Add your credit limit</span>
+          <span className="muted" style={{ fontSize: 14 }}>Watchdog warns you before the account goes on stop.</span>
+        </span>
+        <Icon name="chevron" size={20} style={{ color: 'var(--muted)' }} />
+      </button>
+    );
+  }
+  const tone = c.status === 'over' ? 'up' : c.status === 'tight' ? 'due' : 'down';
+  const projected = c.nextFree && c.pace ? Math.min(c.limit * 1.2, c.used + c.pace * c.nextFree.due) : null;
+  return (
+    <section className="card" aria-label="Credit limit" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span className="tile-k">Credit limit</span>
+        <button className="link" style={{ minHeight: 0 }} onClick={onSet}>Change</button>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span className={`num ${tone}`} style={{ fontSize: 30, fontWeight: 800 }}>{c.usedPct}%</span>
+        <span className="muted num">used · {money0(c.used)} of {money0(c.limit)}</span>
+      </div>
+      <div className="meter" role="img" aria-label={`${c.usedPct}% of the credit limit used`}>
+        {projected != null && <i style={{ width: `${Math.min(100, (projected / c.limit) * 100)}%`, background: `var(--${tone})`, opacity: 0.25 }} />}
+        <i style={{ width: `${Math.min(100, c.usedPct)}%`, background: `var(--${tone})` }} />
+      </div>
+      <div style={{ fontSize: 15, fontWeight: 600, color: c.status === 'ok' ? 'var(--text-2)' : `var(--${tone})` }}>{creditLine(c)}</div>
+      <div className="muted num" style={{ fontSize: 13 }}>{money0(Math.max(0, c.left))} left · you buy about {money0(c.pace * 7)} a week here{projected != null ? ' · faint bar is where you\'ll be by your next payment' : ''}</div>
+    </section>
   );
 }

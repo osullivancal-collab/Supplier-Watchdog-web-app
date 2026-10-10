@@ -20,10 +20,10 @@ export const business = {
 };
 
 export const suppliers = [
-  { id: 'reece', name: 'Reece', terms: '30 days EOM', rep: 'Dave Mercer', phone: '03 9421 7780', account: 'RE-09887', branch: 'Reece Dandenong' },
-  { id: 'tradelink', name: 'Tradelink', terms: '30 days', rep: 'Sandra Liu', phone: '03 9388 2210', account: 'TL-44120', branch: 'Tradelink Moorabbin' },
-  { id: 'middys', name: 'Middys', terms: '30 days EOM', rep: 'Paul Nguyen', phone: '03 9555 1020', account: 'MD-30214', branch: 'Middys Oakleigh' },
-  { id: 'rexel', name: 'Rexel', terms: '14 days', rep: '', phone: '13 73 95', account: 'RX-55102', branch: '' },
+  { id: 'reece', name: 'Reece', terms: '30 days EOM', rep: 'Dave Mercer', phone: '03 9421 7780', account: 'RE-09887', branch: 'Reece Dandenong', limit: 10000 },
+  { id: 'tradelink', name: 'Tradelink', terms: '30 days', rep: 'Sandra Liu', phone: '03 9388 2210', account: 'TL-44120', branch: 'Tradelink Moorabbin', limit: 5000 },
+  { id: 'middys', name: 'Middys', terms: '30 days EOM', rep: 'Paul Nguyen', phone: '03 9555 1020', account: 'MD-30214', branch: 'Middys Oakleigh', limit: 5000 },
+  { id: 'rexel', name: 'Rexel', terms: '14 days', rep: '', phone: '13 73 95', account: 'RX-55102', branch: '', limit: 3000 },
   { id: 'bunnings', name: 'Bunnings Trade', terms: 'COD', rep: 'Trade desk', phone: '1300 266 464', account: 'BT-77301', branch: '' },
 ];
 

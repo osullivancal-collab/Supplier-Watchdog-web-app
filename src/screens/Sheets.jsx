@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { PriceSteps } from '../components/Charts.jsx';
 import Icon from '../components/Icon.jsx';
 import { Sheet, SupplierChips, useToast } from '../components/UI.jsx';
-import { dayLabel, dirClass, kfmt, money, pct, whenDue } from '../lib/format.js';
+import { dayLabel, dirClass, kfmt, money, money0, pct, whenDue } from '../lib/format.js';
 import { TERMS, dueFromTerms, isCashTerms, itemChange, previewPurchase } from '../lib/model.js';
 import { daysLeft, openBillingPortal, photoUrl, readInvoice, startCheckout } from '../lib/backend.js';
 import { matchSupplier } from '../lib/match.js';
+import { creditUse } from '../lib/portfolio.js';
 import { isoFromOffset, loadPhoto, newId, offsetFromIso, shrinkPhoto, toIso, vendorName } from '../lib/store.js';
 
 /** The docket photo: from this phone if it's here, else a short-lived link from storage. */
@@ -281,7 +282,9 @@ export function SupplierForm({ data, supplier, onClose, onSave }) {
     const name = f.name.trim();
     if (!name) return setError('Give the supplier a name.');
     if (data.suppliers.some((s) => s.id !== supplier?.id && s.name.toLowerCase() === name.toLowerCase())) return setError(`${name} is already in your list.`);
-    onSave({ ...f, name, id: supplier?.id || newId() }, !supplier);
+    const limit = f.limit === '' || f.limit == null ? null : Math.round(Number(f.limit) * 100) / 100;
+    if (limit != null && !(limit > 0)) return setError('The credit limit should be a dollar amount, like 10000.');
+    onSave({ ...f, name, limit, id: supplier?.id || newId() }, !supplier);
   };
   return (
     <Sheet title={supplier ? `Edit ${supplier.name}` : 'Add a supplier'} onClose={onClose}>
@@ -293,6 +296,12 @@ export function SupplierForm({ data, supplier, onClose, onSave }) {
       <label className="field"><span className="label">Rep (optional)</span><input className="input" value={f.rep} onChange={set('rep')} placeholder="Who you deal with" /></label>
       <label className="field"><span className="label">Phone (optional)</span><input className="input" type="tel" inputMode="tel" value={f.phone} onChange={set('phone')} /></label>
       <label className="field"><span className="label">Account no. (optional)</span><input className="input" value={f.account} onChange={set('account')} autoComplete="off" /></label>
+      <label className="field">
+        <span className="label">Credit limit (optional)</span>
+        <input className="input num" inputMode="decimal" placeholder="e.g. 10000" value={f.limit ?? ''}
+          onChange={(e) => { setError(''); setF((x) => ({ ...x, limit: e.target.value.replace(/[^0-9.]/g, '') })); }} />
+        <span className="muted" style={{ fontSize: 13 }}>On your account letter or statement, or ask the rep. Watchdog warns you before you hit it.</span>
+      </label>
       {error && <div className="error" role="alert">{error}</div>}
       <button className="btn btn-primary btn-block" onClick={save}>{supplier ? 'Save' : 'Add supplier'}</button>
     </Sheet>
@@ -307,6 +316,7 @@ export function TryBuy({ data, onClose, onAdd }) {
   const [amount, setAmount] = useState('');
   const sup = data.suppliers.find((s) => s.id === supplierId);
   const n = Number(amount) || 0;
+  const credit = sup ? creditUse(data.bills, sup) : null;
   const p = useMemo(() => (sup && n > 0 ? previewPurchase(data.bills, { supplierId, amount: n, terms: sup.terms || '30 days EOM' }) : null), [data.bills, supplierId, n, sup]);
   return (
     <Sheet title="Try a buy" onClose={onClose}>
@@ -317,6 +327,21 @@ export function TryBuy({ data, onClose, onAdd }) {
       </label>
       {p ? (
         <>
+          {credit && (() => {
+            const after = credit.used + n;
+            const over = after > credit.limit;
+            const near = !over && after / credit.limit >= 0.8;
+            return (
+              <div className="card" role={over ? 'alert' : undefined} style={{ background: over ? 'var(--up-soft)' : near ? 'var(--due-soft)' : 'var(--bg)', boxShadow: 'none' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+                  <span>{over ? 'This puts the account over its limit' : near ? 'Close to the credit limit' : 'Credit limit'}</span>
+                  <span className="num">{Math.round((after / credit.limit) * 100)}%</span>
+                </div>
+                <div className="meter" style={{ marginTop: 10 }}><i style={{ width: `${Math.min(100, (after / credit.limit) * 100)}%`, background: over ? 'var(--up)' : near ? 'var(--due)' : 'var(--down)' }} /></div>
+                <div className="muted num" style={{ fontSize: 13, marginTop: 8 }}>{money0(after)} of {money0(credit.limit)}{over ? ' — the counter may refuse it on account' : ` · ${money0(credit.limit - after)} left after this`}</div>
+              </div>
+            );
+          })()}
           <div className="tiles">
             <div className="tile" style={{ background: 'var(--bg)', minHeight: 100 }}>
               <span className="tile-k">You'd pay it</span>

@@ -35,7 +35,7 @@ describe('database rows ↔ app records', () => {
   it('round-trips bills, suppliers and deals without losing anything', () => {
     const b = bill({ photoPath: `${UID}/x.jpg`, status: 'confirmed', confidence: 92 });
     expect(billFromRow({ ...billToRow(b, UID), total: '1284.50' })).toMatchObject({ ...b, photo: true });
-    const s = { id: 'aaaaaaaa-0000-0000-0000-000000000001', name: 'Reece', terms: 'COD', rep: 'Dave', phone: '03 9421 7780', account: 'RE-1', branch: 'Dandenong' };
+    const s = { id: 'aaaaaaaa-0000-0000-0000-000000000001', name: 'Reece', terms: 'COD', rep: 'Dave', phone: '03 9421 7780', account: 'RE-1', branch: 'Dandenong', limit: 10000 };
     expect(supplierFromRow(supplierToRow(s, UID))).toEqual(s);
     const d = { id: 'd1', supplierId: s.id, kind: 'spend', target: 5000, reward: '$200 credit', rep: 'Dave', startIso: '2026-10-09', endIso: '2026-10-31', signatures: { you: 'M1 1', rep: 'M2 2' }, signedAt: '2026-10-09T01:00:00Z' };
     expect(dealFromRow({ ...dealToRow(d, UID), target: '5000.00' })).toEqual(d);

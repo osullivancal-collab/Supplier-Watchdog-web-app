@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { DotChart, Donut, Gauge, StepChart } from '../components/Charts.jsx';
 import Icon from '../components/Icon.jsx';
 import { Heatmap, StatPills, Ticker, basedOn } from '../components/Portfolio.jsx';
+import { HoldingRow } from '../components/Rows.jsx';
+import { creditLine } from '../lib/portfolio.js';
 import { useCountUp } from '../components/UI.jsx';
 import { bucketDescriber, greeting } from '../lib/buckets.js';
 import { dayLabel, dirClass, kfmt, money, money0, pct, todayLabel, whenDue } from '../lib/format.js';
@@ -111,7 +113,14 @@ export default function Home({ data, ins, go, account = null }) {
           <section aria-label="Where your money goes">
             <div className="section-head"><h2 className="h2">Where your money goes</h2><button className="link" onClick={() => go.tab('suppliers')}>Market</button></div>
             <Heatmap ranked={ins.ranked} onOpen={go.supplier} />
-            <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>Size is the last 90 days' spend. Red is paying more than the 90 days before, green is paying less.</p>
+            <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>Size is the last 90 days' spend. Red is paying more than the 90 days before, green is paying less. Tap one to open it.</p>
+          </section>
+
+          <section aria-label="Your suppliers">
+            <div className="section-head"><h2 className="h2">Your suppliers</h2><button className="link" onClick={() => go.tab('suppliers')}>See all</button></div>
+            <div className="card" style={{ padding: '4px 16px' }}>
+              {ins.ranked.filter((x) => x.spend > 0).slice(0, 4).map((x, i) => <HoldingRow key={x.id} s={x} index={i} onOpen={go.supplier} credit={ins.credit.find((c) => c.id === x.id)} />)}
+            </div>
           </section>
         </div>
       )}
@@ -127,6 +136,8 @@ function pills(ins, go) {
     riser && { key: 'riser', label: 'Top riser', value: riser.name, tone: null, sub: `${pct(riser.change)} on 90 days`, subTone: 'up', onClick: () => go.supplier(riser.id) },
     faller && { key: 'faller', label: 'Top faller', value: faller.name, sub: `${pct(faller.change)} on 90 days`, subTone: 'down', onClick: () => go.supplier(faller.id) },
     lead && { key: 'lead', label: 'Biggest holding', value: lead.name, sub: `${lead.share.toFixed(0)}% of spend`, onClick: () => go.supplier(lead.id) },
+    ins.credit[0] && { key: 'credit', label: 'Credit used', value: `${ins.credit[0].usedPct}%`, tone: ins.credit[0].status === 'ok' ? null : ins.credit[0].status === 'over' ? 'up' : null,
+      sub: `${ins.credit[0].name} · ${money0(Math.max(0, ins.credit[0].left))} left`, subTone: ins.credit[0].status === 'ok' ? null : 'due', onClick: () => go.supplier(ins.credit[0].id) },
     gst.count > 0 && { key: 'gst', label: 'GST to claim', value: `${gst.estimated ? '≈' : ''}${money0(gst.amount)}`, tone: 'down', sub: `${gst.label} · BAS in ${gst.lodgeIn}d`, onClick: () => go.gst() },
     eom.suppliers.length > 0 && { key: 'eom', label: 'EOM cut-off', value: `${eom.daysLeft} day${eom.daysLeft === 1 ? '' : 's'}`, sub: `Buy on the 1st: +${eom.creditFirst - eom.creditToday} days`, subTone: 'due', onClick: () => go.eom() },
     record.onTimePct != null && { key: 'record', label: 'Paid on time', value: `${record.onTimePct}%`, tone: record.onTimePct >= 90 ? 'down' : record.onTimePct < 70 ? 'up' : null, sub: record.streak ? `${record.streak} in a row` : `${record.lateCount} late`, onClick: () => go.tab('deals') },
@@ -152,6 +163,9 @@ function NeedsYou({ data, ins, go, caught, name }) {
   }
   for (const b of ins.open.filter((x) => x.total > 0 && x.due < 0)) {
     rows.push({ key: `o${b.id}`, icon: 'bell', tone: 'up', title: `Overdue · ${name(b)}`, sub: `${whenDue(b.due)}${b.ref ? ` · ${b.ref}` : ''}`, amount: money(b.total), amountTone: 'up', open: () => go.bill(b.id) });
+  }
+  for (const c of ins.credit.filter((x) => x.status !== 'ok')) {
+    rows.push({ key: `credit${c.id}`, icon: 'bolt', tone: c.status === 'over' ? 'up' : 'due', title: `${c.name} at ${c.usedPct}% of credit limit`, sub: creditLine(c), open: () => go.supplier(c.id) });
   }
   if (caught.length) {
     const total = caught.reduce((t, c) => t + c.amount, 0);

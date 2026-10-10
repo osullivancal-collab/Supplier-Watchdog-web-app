@@ -3,7 +3,7 @@ import {
   aheadSeries, billShock, monthForecast, monthlySpend, openBills, owedSeries, rollingSpend, supplierPosition,
   supplierStats, totalOwed,
 } from './model.js';
-import { concentration, eomCutoff, gstToClaim, jobStats, moneyBack, paymentRecord, yearReview } from './portfolio.js';
+import { concentration, creditUse, eomCutoff, gstToClaim, jobStats, moneyBack, paymentRecord, yearReview } from './portfolio.js';
 
 /** Everything the screens show, derived once per data change. */
 export function useInsights(data) {
@@ -50,6 +50,8 @@ export function insights({ bills, suppliers }) {
     spread: concentration(ranked),
     jobs: jobStats(bills),
     year: yearReview(bills, suppliers),
+    // Accounts with a credit limit set, closest to the limit first.
+    credit: suppliers.map((s) => creditUse(bills, s)).filter(Boolean).sort((a, b) => b.usedPct - a.usedPct),
     faller: byChange.length > 1 && byChange.at(-1).change < 0 ? byChange.at(-1) : null,
   };
 }

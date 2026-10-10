@@ -47,7 +47,7 @@ export default function Suppliers({ data, ins, go }) {
             {SORTS.map(([k, l]) => <button key={k} className="chip" aria-pressed={sort === k} onClick={() => setSort(k)}>{l}</button>)}
           </div>
           <div className="card" style={{ padding: '4px 16px', marginTop: -12 }}>
-            {list.map((s) => <HoldingRow key={s.id} s={s} onOpen={go.supplier} show={sort === 'owed' ? 'owed' : 'spend'} />)}
+            {list.map((s) => <HoldingRow key={s.id} s={s} onOpen={go.supplier} show={sort === 'owed' ? 'owed' : 'spend'} credit={ins.credit.find((c) => c.id === s.id)} />)}
             {list.length === 0 && (
               <div className="empty">
                 <div className="h2">No suppliers yet</div>

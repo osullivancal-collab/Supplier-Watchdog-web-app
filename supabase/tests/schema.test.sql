@@ -52,6 +52,9 @@ select pg_temp.check(true, 'trial user can add a supplier and a bill');
 
 select pg_temp.must_fail($$insert into public.bills (user_id, supplier_id, ref, total, issued_on, due_on) values ('11111111-1111-1111-1111-111111111111', 'aaaaaaaa-0000-0000-0000-000000000001', 'inv-1', 10, current_date, current_date)$$, '%bills_user_supplier_ref_idx%');
 select pg_temp.must_fail($$insert into public.bills (user_id, total, issued_on, due_on) values ('11111111-1111-1111-1111-111111111111', 10, current_date, current_date - 5)$$, '%check constraint%');
+select pg_temp.must_fail($$update public.suppliers set credit_limit = -5$$, '%check constraint%');
+update public.suppliers set credit_limit = 10000;
+select pg_temp.check((select credit_limit = 10000 from public.suppliers), 'credit limit saves');
 
 -- Giving yourself paid access must not be possible from the browser.
 select pg_temp.must_fail($$update public.account_billing set subscription_status = 'active'$$, '%permission denied%');

@@ -97,3 +97,42 @@ describe('calendar, heatmap, year, ticker', () => {
     expect(symbol("Middy's")).toBe('MIDDYS');
   });
 });
+
+describe('credit limit', () => {
+  const sup = { id: 'reece', name: 'Reece', limit: 10000 };
+  it('is off until a limit is set', async () => {
+    const { creditUse } = await import('../src/lib/portfolio.js');
+    expect(creditUse([bill({})], { id: 'reece', name: 'Reece' })).toBeNull();
+  });
+
+  it('counts unpaid bills less unused credits, and spots hitting the limit before the next payment', async () => {
+    const { creditUse, creditLine } = await import('../src/lib/portfolio.js');
+    const bills = [
+      bill({ total: 6000, issued: -20, due: 21 }),
+      bill({ total: 2400, issued: -40, due: 30 }),
+      bill({ total: -400, issued: -5, due: -5 }),          // unused credit
+      bill({ total: 600, issued: -50, due: -20, paid: -20 }), // paid: not used
+      bill({ supplierId: 'other', total: 9999 }),
+    ];
+    const c = creditUse(bills, sup);
+    expect(c).toMatchObject({ used: 8000, left: 2000, usedPct: 80, status: 'tight', nextFree: { due: 21, amount: 6000 } });
+    expect(c.pace).toBeCloseTo((6000 + 2400 + 600) / 60, 2);       // $150 a day
+    expect(c.daysToLimit).toBe(13);                                 // 2000 / 150
+    expect(c.hitsFirst).toBe(true);
+    expect(creditLine(c)).toBe('At your usual pace you hit the limit in 13 days, 8 days before your next payment frees up room.');
+  });
+
+  it('flags an account over its limit', async () => {
+    const { creditUse, creditLine } = await import('../src/lib/portfolio.js');
+    const c = creditUse([bill({ total: 10500, due: 10 })], sup);
+    expect(c.status).toBe('over');
+    expect(creditLine(c)).toMatch(/^Over the limit by \$500/);
+  });
+
+  it('is relaxed when there is room and payment comes first', async () => {
+    const { creditUse, creditLine } = await import('../src/lib/portfolio.js');
+    const c = creditUse([bill({ total: 2000, issued: -50, due: 5 })], sup);
+    expect(c).toMatchObject({ usedPct: 20, status: 'ok', hitsFirst: false });
+    expect(creditLine(c)).toBe('$2,000 frees up when you pay in 5 days.');
+  });
+});

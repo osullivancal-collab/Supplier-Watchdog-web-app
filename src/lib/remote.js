@@ -12,10 +12,11 @@ const INTAKE_DOMAIN = import.meta.env.VITE_INTAKE_EMAIL_DOMAIN || '';
 
 // ----- rows ↔ the app's stored shapes -------------------------------------
 export const supplierFromRow = (r) => ({
-  id: r.id, name: r.name, terms: r.terms || '30 days EOM', rep: r.rep || '', phone: r.phone || '', account: r.account_no || '', branch: r.branch || '',
+  id: r.id, name: r.name, terms: r.terms || '30 days EOM', rep: r.rep || '', phone: r.phone || '', account: r.account_no || '', branch: r.branch || '', limit: r.credit_limit == null ? null : Number(r.credit_limit),
 });
 export const supplierToRow = (s, uid) => ({
   id: s.id, user_id: uid, name: String(s.name || '').trim(), terms: nil(s.terms), rep: nil(s.rep), phone: nil(s.phone), account_no: nil(s.account), branch: nil(s.branch),
+  credit_limit: s.limit ? Number(s.limit) : null,
 });
 
 export const billFromRow = (r) => ({

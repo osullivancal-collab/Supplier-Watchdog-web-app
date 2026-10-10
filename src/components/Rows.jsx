@@ -7,11 +7,11 @@ import Icon from './Icon.jsx';
 const AVATARS = [['var(--hero)', 'var(--accent)'], ['var(--card-2)', 'var(--text)'], ['var(--due-soft)', 'var(--due)'], ['var(--down-soft)', 'var(--down)'], ['var(--up-soft)', 'var(--up)']];
 export const initials = (name) => name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
 
-export function HoldingRow({ s, onOpen, show = 'change', index = 0 }) {
+export function HoldingRow({ s, onOpen, show = 'change', index = 0, credit = null }) {
   const [avBg, avFg] = AVATARS[index % AVATARS.length];
   const tone = dirClass(s.change);
   const sub = s.spend > 0
-    ? `${s.share.toFixed(0)}%${s.owed > 0 ? ` · ${kfmt(s.owed)} owed` : ' of spend'}`
+    ? `${s.share.toFixed(0)}%${credit ? ` · ${credit.usedPct}% of limit` : s.owed > 0 ? ` · ${kfmt(s.owed)} owed` : ' of spend'}`
     : 'No bills yet';
   return (
     <button className="holding" onClick={() => onOpen(s.id)} style={{ gridTemplateColumns: '40px minmax(0, 1fr) 56px auto', gap: 10 }}>

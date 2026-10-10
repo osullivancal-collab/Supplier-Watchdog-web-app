@@ -211,3 +211,41 @@ export function yearReview(bills, suppliers, today = new Date()) {
 
 /** Short ticker symbol: "Bunnings Trade" → BUNNINGS, "Tradelink" → TRADELINK. */
 export const symbol = (name) => String(name || '').split(/\s+/)[0].replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 9);
+
+// ---------------------------------------------------------------------------
+// Credit limit: a trade account's limit caps the unpaid balance. "Used" is
+// everything unpaid with that supplier less unused credits. The forecast asks:
+// at your normal buying pace (last 60 days), do you hit the limit before your
+// next bill falls due and frees up room? Returns null when no limit is set.
+// ---------------------------------------------------------------------------
+export function creditUse(bills, supplier) {
+  const limit = Number(supplier?.limit);
+  if (!limit || limit <= 0) return null;
+  const mine = bills.filter((b) => b.supplierId === supplier.id);
+  const open = mine.filter((b) => b.paid == null);
+  const used = Math.max(0, round2(sum(open, (b) => b.total)));
+  const left = round2(limit - used);
+  const pace = sum(mine.filter((b) => b.total > 0 && b.issued > -60), (b) => b.total) / 60; // $ a day
+  const upcoming = open.filter((b) => b.total > 0 && b.due >= 0).sort((a, b) => a.due - b.due);
+  const nextFree = upcoming.length
+    ? { due: upcoming[0].due, amount: round2(sum(upcoming.filter((b) => b.due === upcoming[0].due), (b) => b.total)) }
+    : null;
+  const daysToLimit = left <= 0 ? 0 : pace > 0 ? Math.floor(left / pace) : null;
+  const hitsFirst = daysToLimit != null && (!nextFree || daysToLimit < nextFree.due);
+  const usedPct = Math.round((used / limit) * 100);
+  const status = used > limit ? 'over' : usedPct >= 80 || (hitsFirst && daysToLimit <= 14) ? 'tight' : 'ok';
+  return { id: supplier.id, name: supplier.name, limit, used, left, usedPct, pace: round2(pace), daysToLimit, nextFree, hitsFirst, status };
+}
+
+/** One line a tradie can act on. */
+export function creditLine(c) {
+  if (!c) return '';
+  if (c.status === 'over') return `Over the limit by ${Math.round(c.used - c.limit).toLocaleString('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 })}: expect the account to go on stop.`;
+  if (c.hitsFirst && c.daysToLimit != null) {
+    const when = c.daysToLimit === 0 ? 'today' : c.daysToLimit === 1 ? 'tomorrow' : `in ${c.daysToLimit} days`;
+    const gap = c.nextFree ? c.nextFree.due - c.daysToLimit : null;
+    return `At your usual pace you hit the limit ${when}${gap ? `, ${gap} day${gap === 1 ? '' : 's'} before your next payment frees up room` : ''}.`;
+  }
+  if (c.nextFree) return `${c.nextFree.amount.toLocaleString('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 })} frees up when you pay in ${c.nextFree.due} day${c.nextFree.due === 1 ? '' : 's'}.`;
+  return 'Plenty of room.';
+}

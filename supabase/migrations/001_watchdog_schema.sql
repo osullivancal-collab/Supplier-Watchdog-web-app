@@ -196,6 +196,8 @@ create table public.suppliers (
   phone text check (char_length(phone) <= 40),
   account_no text check (char_length(account_no) <= 60),
   branch text check (char_length(branch) <= 120),
+  -- The account's credit limit (caps the unpaid balance). Optional; the meter only shows when set.
+  credit_limit numeric(12, 2) check (credit_limit is null or credit_limit > 0),
   -- Sender domains seen on this supplier's emailed bills, so email-in can match them.
   email_domains text[] not null default '{}' check (cardinality(email_domains) <= 10),
   created_at timestamptz not null default now(),

@@ -398,3 +398,7 @@ input[type='date'] { color-scheme: dark; }
 .heat-tile.small .heat-name { font-size: 12px; letter-spacing: .02em; }
 .heat-tile.small .heat-pct { font-size: 12px; white-space: nowrap; }
 .heat-pct { white-space: nowrap; }
+/* ---------- Credit limit meter ---------- */
+.meter { position: relative; height: 10px; border-radius: 5px; background: var(--card-2); overflow: hidden; }
+.meter i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; transition: width .5s ease; }
+.meter-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); opacity: .35; }
